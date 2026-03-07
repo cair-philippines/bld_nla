@@ -1,6 +1,7 @@
 """
-CRLA analysis: PCA weight derivation, performance scoring,
-multi-timepoint processing, and chain-based progress scoring.
+CRLA analysis: PCA weight derivation, ordinal proficiency scoring,
+performance scoring, multi-timepoint processing, and chain-based
+progress scoring.
 """
 
 import numpy as np
@@ -26,6 +27,61 @@ TIME_CHAIN = [
     ("2024-25", "EoSY"),
     ("2025-26", "BoSY"),
 ]
+
+
+# ---------------------------------------------------------------------------
+# Ordinal proficiency scoring
+# ---------------------------------------------------------------------------
+
+ORDINAL_WEIGHTS = {
+    "Lower Emergent": 1,
+    "Higher Emergent": 2,
+    "Developing": 3,
+    "Transitioning": 4,
+    "Grade Level": 5,
+}
+
+
+def compute_ordinal_score(pct_df):
+    """
+    Compute ordinal proficiency index per school.
+
+    For each grade-language group, computes a weighted average proficiency
+    level using fixed ordinal weights:
+
+        score = (1 × %LE + 2 × %HE + 3 × %Dev + 4 × %Trans + 5 × %GL) / 100
+
+    The school-level score is the mean across all available groups.
+
+    Parameters
+    ----------
+    pct_df : pandas.DataFrame
+        Percentage DataFrame indexed by School ID (from
+        ``compute_percentages``).
+
+    Returns
+    -------
+    pandas.Series
+        Ordinal proficiency score per school, in [1, 5].
+        1 = all students at Lower Emergent.
+        5 = all students at Grade Level.
+        NaN if no complete groups available.
+    """
+    ordinal_vals = list(ORDINAL_WEIGHTS.values())  # [1, 2, 3, 4, 5]
+
+    group_scores = []
+    for grade, lang in GRADE_LANGUAGE_GROUPS:
+        cols = _get_group_columns(grade, lang)
+        group_data = pct_df[cols]
+        has_data = group_data.notna().all(axis=1)
+
+        score = sum(
+            group_data[col] * w for col, w in zip(cols, ordinal_vals)
+        ) / 100
+        score[~has_data] = np.nan
+        group_scores.append(score)
+
+    return pd.concat(group_scores, axis=1).mean(axis=1)
 
 
 # ---------------------------------------------------------------------------
@@ -176,17 +232,14 @@ def compute_performance_score(pct_df, weights):
 # ---------------------------------------------------------------------------
 
 def process_all_timepoints(df_all, weights=None, pca_reference=None,
-                           pca_invert=False):
+                           pca_invert=False, scoring="pca"):
     """
     Run the full Step 2 pipeline (2a → 2b → 2c → 2d).
 
     1. ``compute_percentages`` for every time point.
     2. ``validate_timepoint`` for every time point.
-    3. Derive PCA weights from *pca_reference* (or use provided *weights*).
-    4. ``compute_performance_score`` for every time point.
-
-    Exactly one of *weights* or *pca_reference* must be provided.
-    Equal weights are not supported (they produce degenerate scores).
+    3. Derive weights (PCA, provided, or ordinal).
+    4. Compute performance score for every time point.
 
     Parameters
     ----------
@@ -201,19 +254,29 @@ def process_all_timepoints(df_all, weights=None, pca_reference=None,
         use for PCA weight derivation.  Must be a key in *df_all*.
     pca_invert : bool, optional
         Passed to ``derive_pca_weights``.
+    scoring : str, optional
+        ``'pca'`` (default) or ``'ordinal'``.
+        - ``'pca'``: requires *weights* or *pca_reference*.
+        - ``'ordinal'``: uses fixed ordinal proficiency index (1–5).
+          No weights or pca_reference needed.
 
     Returns
     -------
     dict with keys:
         ``percentages``  : ``{(sy, period): DataFrame}``
         ``validation``   : ``{(sy, period): DataFrame}``
-        ``weights``      : ``dict`` of PCA or provided weights
-        ``pca_model``    : PCA model (or None if weights provided)
+        ``weights``      : ``dict`` of weights used
+        ``pca_model``    : PCA model (or None)
         ``performance``  : ``{(sy, period): Series}``
+        ``scoring``      : ``str`` scoring method used
     """
-    if weights is None and pca_reference is None:
+    if scoring not in ("pca", "ordinal"):
+        raise ValueError(f"scoring must be 'pca' or 'ordinal', got {scoring!r}")
+
+    if scoring == "pca" and weights is None and pca_reference is None:
         raise ValueError(
-            "Either 'weights' or 'pca_reference' must be provided. "
+            "Either 'weights' or 'pca_reference' must be provided "
+            "when scoring='pca'. "
             "Equal weights produce degenerate scores (always 20.00)."
         )
 
@@ -233,27 +296,40 @@ def process_all_timepoints(df_all, weights=None, pca_reference=None,
         valid_n = validation[key]["valid"].sum()
         print(f"{sy} {period}: {valid_n}/{len(validation[key])} schools valid")
 
-    # 2c: weights
+    # 2c + 2d: weights and performance scoring
     pca_model = None
-    if weights is None:
-        print(f"\nDeriving PCA weights from {pca_reference} ...")
-        weights, pca_model = derive_pca_weights(
-            percentages[pca_reference],
-            validation[pca_reference],
-            invert=pca_invert,
-        )
 
-    # 2d: performance scoring
-    performance = {}
-    print()
-    for key, pct in percentages.items():
-        perf = compute_performance_score(pct, weights)
-        # Mask invalid schools
-        perf[~validation[key]["valid"]] = np.nan
-        performance[key] = perf
+    if scoring == "ordinal":
+        weights = ORDINAL_WEIGHTS
+        print("\nUsing ordinal proficiency scoring (1–5 scale)")
 
-        sy, period = key
-        print(f"{sy} {period}: mean perf = {perf.mean():.2f}")
+        performance = {}
+        for key, pct in percentages.items():
+            perf = compute_ordinal_score(pct)
+            perf[~validation[key]["valid"]] = np.nan
+            performance[key] = perf
+
+            sy, period = key
+            print(f"{sy} {period}: mean perf = {perf.mean():.2f}")
+    else:
+        # PCA path
+        if weights is None:
+            print(f"\nDeriving PCA weights from {pca_reference} ...")
+            weights, pca_model = derive_pca_weights(
+                percentages[pca_reference],
+                validation[pca_reference],
+                invert=pca_invert,
+            )
+
+        performance = {}
+        print()
+        for key, pct in percentages.items():
+            perf = compute_performance_score(pct, weights)
+            perf[~validation[key]["valid"]] = np.nan
+            performance[key] = perf
+
+            sy, period = key
+            print(f"{sy} {period}: mean perf = {perf.mean():.2f}")
 
     return {
         "percentages": percentages,
@@ -261,6 +337,7 @@ def process_all_timepoints(df_all, weights=None, pca_reference=None,
         "weights": weights,
         "pca_model": pca_model,
         "performance": performance,
+        "scoring": scoring,
     }
 
 
