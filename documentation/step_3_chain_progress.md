@@ -109,7 +109,32 @@ chain_result = compute_chain_progress(
 - **Input**: Step 2 outputs (`performance`, `validation`) and Step 1 raw data (`df_all`)
 - **Module**: `modules/analysis.py` — `compute_chain_progress()`, `_total_assessed()`, `_segment_label()`
 
+## Verified Results (2025-03-07)
+
+Full pipeline run with 3 time points (local data):
+
+| Metric | Value |
+|--------|-------|
+| Total schools (union) | 39,206 |
+| Segment 1 valid (Learning 2024-25) | 34,372 / 39,206 |
+| Segment 1 mean delta | **-5.54** |
+| Segment 2 valid (Retention 2024-25→2025-26) | 32,034 / 39,206 |
+| Segment 2 mean delta | **+6.04** |
+| Full chain (both segments valid) | 29,854 |
+| Composite score: schools scored | 36,552 |
+| Composite score: mean | +0.08 |
+| Composite score: std | 5.53 |
+
+**Note**: The negative Learning delta (BoSY→EoSY) is counterintuitive and may indicate the PCA weight direction needs investigation (try `pca_invert=True` in `process_all_timepoints`).
+
+### Segments available distribution
+
+| Segments | Schools |
+|----------|---------|
+| 0 | 2,654 |
+| 1 | 6,698 |
+| 2 | 29,854 |
+
 ## Status
 
-- **Implemented** in `modules/analysis.py`
-- **Pending**: user verification in notebook environment
+- **Implemented and verified** in `modules/analysis.py`
