@@ -13,8 +13,10 @@ from preprocessing import (
     GRADE_LANGUAGE_GROUPS,
     METADATA_COLUMNS,
     _get_group_columns,
+    _clean_raw_to_numeric,
     compute_percentages,
     validate_timepoint,
+    get_total_assessed,
 )
 
 
@@ -82,6 +84,76 @@ def compute_ordinal_score(pct_df):
         group_scores.append(score)
 
     return pd.concat(group_scores, axis=1).mean(axis=1)
+
+
+def compute_ordinal_moments(pct_df):
+    """
+    Compute ordinal proficiency mean, standard deviation, and skewness
+    per school.
+
+    For each grade-language group with complete data (all 5 profiles
+    non-NaN), computes three moments from the percentage distribution
+    and ordinal weights [1, 2, 3, 4, 5]:
+
+        mean = Σ(pct_i × w_i) / 100
+        var  = Σ(pct_i × (w_i − mean)²) / 100
+        sd   = √var
+        skew = [Σ(pct_i × (w_i − mean)³) / 100] / sd³
+
+    School-level values are the mean of each moment across available
+    grade-language groups (identical to how ``compute_ordinal_score``
+    averages the mean).
+
+    Parameters
+    ----------
+    pct_df : pandas.DataFrame
+        Percentage DataFrame indexed by School ID.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns: ``ordinal_mean``, ``ordinal_sd``, ``ordinal_skew``.
+        ``ordinal_mean`` is identical to ``compute_ordinal_score()`` output.
+    """
+    w = np.array(list(ORDINAL_WEIGHTS.values()), dtype=float)
+
+    group_means = []
+    group_sds = []
+    group_skews = []
+
+    for grade, lang in GRADE_LANGUAGE_GROUPS:
+        cols = _get_group_columns(grade, lang)
+        group_data = pct_df[cols]
+        has_data = group_data.notna().all(axis=1)
+
+        pct = group_data.values  # (n_schools, 5)
+
+        mean = (pct * w).sum(axis=1) / 100
+        dev = w - mean[:, np.newaxis]  # (n_schools, 5)
+        var = (pct * dev ** 2).sum(axis=1) / 100
+        sd = np.sqrt(var)
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            skew = (pct * dev ** 3).sum(axis=1) / 100 / (sd ** 3)
+        skew[sd == 0] = np.nan
+
+        mean_s = pd.Series(mean, index=pct_df.index)
+        sd_s = pd.Series(sd, index=pct_df.index)
+        skew_s = pd.Series(skew, index=pct_df.index)
+
+        mean_s[~has_data] = np.nan
+        sd_s[~has_data] = np.nan
+        skew_s[~has_data] = np.nan
+
+        group_means.append(mean_s)
+        group_sds.append(sd_s)
+        group_skews.append(skew_s)
+
+    return pd.DataFrame({
+        "ordinal_mean": pd.concat(group_means, axis=1).mean(axis=1),
+        "ordinal_sd": pd.concat(group_sds, axis=1).mean(axis=1),
+        "ordinal_skew": pd.concat(group_skews, axis=1).mean(axis=1),
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -289,12 +361,16 @@ def process_all_timepoints(df_all, weights=None, pca_reference=None,
     # 2a + 2b: percentages and validation for all time points
     percentages = {}
     validation = {}
+    raw_counts = {}
     for key, df in df_all.items():
         percentages[key] = compute_percentages(df)
-        validation[key] = validate_timepoint(percentages[key])
+        raw_counts[key] = _clean_raw_to_numeric(df)
+        validation[key] = validate_timepoint(percentages[key], raw_counts_df=raw_counts[key])
         sy, period = key
         valid_n = validation[key]["valid"].sum()
-        print(f"{sy} {period}: {valid_n}/{len(validation[key])} schools valid")
+        strict_n = validation[key]["valid_strict"].sum()
+        total_n = len(validation[key])
+        print(f"{sy} {period}: {valid_n}/{total_n} valid, {strict_n}/{total_n} valid_strict")
 
     # 2c + 2d: weights and performance scoring
     pca_model = None
@@ -304,13 +380,25 @@ def process_all_timepoints(df_all, weights=None, pca_reference=None,
         print("\nUsing ordinal proficiency scoring (1–5 scale)")
 
         performance = {}
+        ordinal_sd = {}
+        ordinal_skew = {}
         for key, pct in percentages.items():
-            perf = compute_ordinal_score(pct)
-            perf[~validation[key]["valid"]] = np.nan
+            moments = compute_ordinal_moments(pct)
+            invalid = ~validation[key]["valid"]
+
+            perf = moments["ordinal_mean"]
+            sd = moments["ordinal_sd"]
+            skew = moments["ordinal_skew"]
+            perf[invalid] = np.nan
+            sd[invalid] = np.nan
+            skew[invalid] = np.nan
+
             performance[key] = perf
+            ordinal_sd[key] = sd
+            ordinal_skew[key] = skew
 
             sy, period = key
-            print(f"{sy} {period}: mean perf = {perf.mean():.2f}")
+            print(f"{sy} {period}: mean={perf.mean():.2f}, sd={sd.mean():.2f}, skew={skew.mean():.2f}")
     else:
         # PCA path
         if weights is None:
@@ -331,7 +419,7 @@ def process_all_timepoints(df_all, weights=None, pca_reference=None,
             sy, period = key
             print(f"{sy} {period}: mean perf = {perf.mean():.2f}")
 
-    return {
+    result = {
         "percentages": percentages,
         "validation": validation,
         "weights": weights,
@@ -340,6 +428,12 @@ def process_all_timepoints(df_all, weights=None, pca_reference=None,
         "scoring": scoring,
     }
 
+    if scoring == "ordinal":
+        result["ordinal_sd"] = ordinal_sd
+        result["ordinal_skew"] = ordinal_skew
+
+    return result
+
 
 # ---------------------------------------------------------------------------
 # Step 3 — Chain-based progress scoring
@@ -347,7 +441,10 @@ def process_all_timepoints(df_all, weights=None, pca_reference=None,
 
 def _total_assessed(df):
     """
-    Sum of all 30 grade-level columns per school, cleaned to numeric.
+    Retrieve cached total assessed count per school.
+
+    Delegates to ``preprocessing.get_total_assessed()`` using the
+    school_year and period metadata from the DataFrame.
 
     Parameters
     ----------
@@ -359,15 +456,9 @@ def _total_assessed(df):
     pandas.Series
         Total student count per school, indexed by School ID.
     """
-    tmp = df.copy()
-    for col in CANONICAL_GRADE_COLUMNS:
-        s = tmp[col].astype(str).str.replace(",", "", regex=False)
-        tmp[col] = pd.to_numeric(s, errors="coerce")
-
-    if "School ID" in tmp.columns:
-        tmp = tmp.set_index("School ID")
-
-    return tmp[CANONICAL_GRADE_COLUMNS].sum(axis=1)
+    sy = df["school_year"].iloc[0]
+    period = df["period"].iloc[0]
+    return get_total_assessed(sy, period)
 
 
 def _segment_label(t0, t1):
@@ -392,6 +483,8 @@ def compute_chain_progress(
     validation,
     time_chain=None,
     count_threshold=0.25,
+    ordinal_sd=None,
+    ordinal_skew=None,
 ):
     """
     Compute pairwise segment deltas and composite progress across an
@@ -418,6 +511,12 @@ def compute_chain_progress(
     count_threshold : float, optional
         Maximum acceptable proportional change in total student count
         between adjacent time points.  Default 0.25 (25%).
+    ordinal_sd : dict, optional
+        ``{(sy, period): Series}`` — ordinal SD from
+        ``compute_ordinal_moments``.  When provided (with
+        *ordinal_skew*), SD and skew columns are added to the output.
+    ordinal_skew : dict, optional
+        ``{(sy, period): Series}`` — ordinal skewness.
 
     Returns
     -------
@@ -466,9 +565,22 @@ def compute_chain_progress(
         else:
             result[col] = np.nan
 
+    # ---- SD and Skew at each time point ----
+    has_moments = ordinal_sd is not None and ordinal_skew is not None
+    if has_moments:
+        for key in time_chain:
+            sy, period = key
+            sd_col = f"sd_{period}_{sy}"
+            skew_col = f"skew_{period}_{sy}"
+            result[sd_col] = ordinal_sd[key].reindex(idx) if key in ordinal_sd else np.nan
+            result[skew_col] = ordinal_skew[key].reindex(idx) if key in ordinal_skew else np.nan
+
     # ---- Segments ----
     seg_delta_cols = []
     seg_valid_cols = []
+    seg_valid_strict_cols = []
+    seg_sd_delta_cols = []
+    seg_skew_delta_cols = []
 
     for i in range(len(time_chain) - 1):
         t0 = time_chain[i]
@@ -514,30 +626,81 @@ def compute_chain_progress(
         result[valid_col] = seg_valid
         result[count_col] = count_stable
 
+        # Strict segment validity
+        valid_strict_col = f"seg{seg_n}_valid_strict"
+        strict0 = (
+            validation[t0]["valid_strict"].reindex(idx, fill_value=False)
+            if t0 in validation and "valid_strict" in validation[t0].columns
+            else pd.Series(False, index=idx)
+        )
+        strict1 = (
+            validation[t1]["valid_strict"].reindex(idx, fill_value=False)
+            if t1 in validation and "valid_strict" in validation[t1].columns
+            else pd.Series(False, index=idx)
+        )
+        result[valid_strict_col] = strict0 & strict1 & count_stable
+        seg_valid_strict_cols.append(valid_strict_col)
+
         seg_delta_cols.append(delta_col)
         seg_valid_cols.append(valid_col)
 
+        if has_moments:
+            sd_delta_col = f"seg{seg_n}_{label}_sd_delta"
+            skew_delta_col = f"seg{seg_n}_{label}_skew_delta"
+
+            sd0 = ordinal_sd[t0].reindex(idx) if t0 in ordinal_sd else pd.Series(np.nan, index=idx)
+            sd1 = ordinal_sd[t1].reindex(idx) if t1 in ordinal_sd else pd.Series(np.nan, index=idx)
+            sd_delta = sd1 - sd0
+            sd_delta[~seg_valid] = np.nan
+            result[sd_delta_col] = sd_delta
+            seg_sd_delta_cols.append(sd_delta_col)
+
+            skew0 = ordinal_skew[t0].reindex(idx) if t0 in ordinal_skew else pd.Series(np.nan, index=idx)
+            skew1 = ordinal_skew[t1].reindex(idx) if t1 in ordinal_skew else pd.Series(np.nan, index=idx)
+            skew_delta = skew1 - skew0
+            skew_delta[~seg_valid] = np.nan
+            result[skew_delta_col] = skew_delta
+            seg_skew_delta_cols.append(skew_delta_col)
+
     # ---- Summary ----
     result["segments_available"] = result[seg_valid_cols].sum(axis=1)
+    if seg_valid_strict_cols:
+        result["segments_available_strict"] = result[seg_valid_strict_cols].sum(axis=1)
     result["composite_score"] = result[seg_delta_cols].sum(
         axis=1, min_count=1
     )
+
+    if has_moments:
+        result["composite_sd_delta"] = result[seg_sd_delta_cols].sum(
+            axis=1, min_count=1
+        )
+        result["composite_skew_delta"] = result[seg_skew_delta_cols].sum(
+            axis=1, min_count=1
+        )
 
     # ---- Print summary ----
     n_total = len(result)
     for i, col in enumerate(seg_delta_cols):
         n_valid = result[seg_valid_cols[i]].sum()
+        n_strict = result[seg_valid_strict_cols[i]].sum() if seg_valid_strict_cols else 0
         mean_delta = result[col].mean()
         print(
             f"Segment {i+1} ({col}): "
-            f"{n_valid}/{n_total} schools valid, "
+            f"{n_valid}/{n_total} valid, "
+            f"{n_strict}/{n_total} valid_strict, "
             f"mean delta = {mean_delta:.4f}"
         )
 
     full_chain = result["segments_available"] == len(seg_valid_cols)
+    full_strict = (
+        result["segments_available_strict"] == len(seg_valid_strict_cols)
+        if "segments_available_strict" in result.columns
+        else pd.Series(False, index=result.index)
+    )
     print(
         f"\nFull chain ({len(seg_valid_cols)} segments): "
-        f"{full_chain.sum()}/{n_total} schools"
+        f"{full_chain.sum()}/{n_total} schools, "
+        f"{full_strict.sum()}/{n_total} strict"
     )
     composite_valid = result["composite_score"].notna()
     print(

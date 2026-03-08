@@ -16,8 +16,9 @@ from preprocessing import (
     READING_PROFILES,
     CANONICAL_GRADE_COLUMNS,
     METADATA_COLUMNS,
+    get_total_assessed,
 )
-from analysis import _total_assessed, _segment_label, TIME_CHAIN
+from analysis import _segment_label, TIME_CHAIN
 
 
 # Category order matching crla_v2.py output
@@ -81,12 +82,12 @@ def _build_pair_dataframe(
 
     # Count stability
     cnt0 = (
-        _total_assessed(raw_data[t0]).reindex(idx)
+        get_total_assessed(*t0).reindex(idx)
         if t0 in raw_data
         else pd.Series(np.nan, index=idx)
     )
     cnt1 = (
-        _total_assessed(raw_data[t1]).reindex(idx)
+        get_total_assessed(*t1).reindex(idx)
         if t1 in raw_data
         else pd.Series(np.nan, index=idx)
     )

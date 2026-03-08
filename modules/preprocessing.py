@@ -211,12 +211,30 @@ def load_all_assessments(file_map=None, source="gcs"):
 
 METADATA_COLUMNS = ["School Name", "Region", "Division", "District"]
 
+_total_assessed_cache = {}
+
 
 def _get_group_columns(grade, lang):
     """Return the 5 canonical column names for a grade-language group."""
     if lang:
         return [f"{grade} {lang} {profile}" for profile in READING_PROFILES]
     return [f"{grade} {profile}" for profile in READING_PROFILES]
+
+
+def _clean_raw_to_numeric(df):
+    """Clean grade columns to numeric and index by School ID.
+
+    Returns a copy with the 30 canonical grade columns cleaned
+    (comma removal, ``pd.to_numeric`` coercion) and indexed by
+    School ID.  All other columns are preserved.
+    """
+    df = df.copy()
+    for col in CANONICAL_GRADE_COLUMNS:
+        s = df[col].astype(str).str.replace(",", "", regex=False)
+        df[col] = pd.to_numeric(s, errors="coerce")
+    if "School ID" in df.columns:
+        df = df.set_index("School ID")
+    return df
 
 
 # ---------------------------------------------------------------------------
@@ -250,14 +268,12 @@ def compute_percentages(df):
         ``school_year``, ``period``, and the 30 canonical columns
         now expressed as percentages.
     """
-    df = df.copy()
+    df = _clean_raw_to_numeric(df)
 
-    # Clean grade columns: remove commas, coerce to numeric
-    for col in CANONICAL_GRADE_COLUMNS:
-        s = df[col].astype(str).str.replace(",", "", regex=False)
-        df[col] = pd.to_numeric(s, errors="coerce")
-
-    df = df.set_index("School ID")
+    # Cache total assessed per school (sum of raw counts before percentage conversion)
+    sy = df["school_year"].iloc[0]
+    period = df["period"].iloc[0]
+    _total_assessed_cache[(sy, period)] = df[CANONICAL_GRADE_COLUMNS].sum(axis=1)
 
     # Compute percentages per grade-language group
     for grade, lang in GRADE_LANGUAGE_GROUPS:
@@ -280,7 +296,7 @@ def compute_percentages(df):
 # Per-time-point validation
 # ---------------------------------------------------------------------------
 
-def validate_timepoint(pct_df):
+def validate_timepoint(pct_df, raw_counts_df=None):
     """
     Validate per-school data completeness at a single time point.
 
@@ -288,6 +304,11 @@ def validate_timepoint(pct_df):
     ----------
     pct_df : pandas.DataFrame
         Output of ``compute_percentages`` (indexed by School ID).
+    raw_counts_df : pandas.DataFrame, optional
+        Cleaned raw counts indexed by School ID (from
+        ``_clean_raw_to_numeric``).  When provided, enables
+        ``min_group_assessed`` and the sample-size component of
+        ``valid_strict``.
 
     Returns
     -------
@@ -297,6 +318,9 @@ def validate_timepoint(pct_df):
         - ``has_{group}`` : bool for each of the 6 grade-language groups
         - ``groups_available`` : int (0–6)
         - ``valid`` : bool (True if at least one group has data)
+        - ``has_all_grades`` : bool (at least one group per grade level)
+        - ``min_group_assessed`` : int (minimum students across reporting groups)
+        - ``valid_strict`` : bool (all grades covered, ≥4 groups, ≥20 per group)
     """
     validation = pd.DataFrame(index=pct_df.index)
 
@@ -309,4 +333,67 @@ def validate_timepoint(pct_df):
     validation["groups_available"] = validation[has_cols].sum(axis=1)
     validation["valid"] = validation["groups_available"] > 0
 
+    # ---- Strict validation tier ----
+
+    # has_all_grades: at least one group per grade level
+    has_g1 = validation["has_G1"]
+    has_g2 = validation["has_G2_MT"] | validation["has_G2_Fil"]
+    has_g3 = validation["has_G3_MT"] | validation["has_G3_Fil"] | validation["has_G3_Eng"]
+    validation["has_all_grades"] = has_g1 & has_g2 & has_g3
+
+    # min_group_assessed: minimum total assessed across reporting groups
+    if raw_counts_df is not None:
+        group_totals = []
+        for grade, lang in GRADE_LANGUAGE_GROUPS:
+            group_cols = _get_group_columns(grade, lang)
+            label = f"{grade}_{lang}" if lang else grade
+            group_sum = raw_counts_df.reindex(pct_df.index)[group_cols].sum(axis=1)
+            group_sum[~validation[f"has_{label}"]] = np.nan
+            group_totals.append(group_sum)
+        validation["min_group_assessed"] = (
+            pd.concat(group_totals, axis=1).min(axis=1).astype("Int64")
+        )
+    else:
+        validation["min_group_assessed"] = np.nan
+
+    # valid_strict: all grades + ≥4 groups + ≥20 per group
+    strict = (
+        validation["valid"]
+        & validation["has_all_grades"]
+        & (validation["groups_available"] >= 4)
+    )
+    if raw_counts_df is not None:
+        strict = strict & (validation["min_group_assessed"] >= 20)
+    validation["valid_strict"] = strict
+
     return validation
+
+
+# ---------------------------------------------------------------------------
+# Cached total assessed
+# ---------------------------------------------------------------------------
+
+def get_total_assessed(school_year, period):
+    """
+    Return the cached total assessed count per school for a timepoint.
+
+    The cache is populated by ``compute_percentages()`` — call that first.
+
+    Parameters
+    ----------
+    school_year : str
+    period : str
+
+    Returns
+    -------
+    pandas.Series
+        Total student count per school, indexed by School ID.
+    """
+    key = (school_year, period)
+    if key not in _total_assessed_cache:
+        raise KeyError(
+            f"Total assessed for {key} not cached. "
+            f"Call compute_percentages() for this timepoint first. "
+            f"Available: {list(_total_assessed_cache.keys())}"
+        )
+    return _total_assessed_cache[key]
