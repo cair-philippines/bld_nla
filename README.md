@@ -127,6 +127,22 @@ The pipeline exports one CSV per consecutive timepoint pair, with 91 columns mat
 
 Reference: [`documentation/step_4_output.md`](documentation/step_4_output.md)
 
+### 4.5 Step 5 — Priority Ranking
+
+Schools passing strict validation are ranked for intervention targeting using a three-pillar composite score:
+
+| Pillar | What it measures | Input |
+|--------|-----------------|-------|
+| **Need** | How much a school's learners are struggling | Weighted z-scores of 6 ordinal moment components (endpoint mean, SD, skewness + segment deltas) |
+| **Impact** | How many learners are affected | Total assessed student count at the segment endpoint |
+| **Capacity Gap** | How resource-constrained the school's LGU is | Inverse of LGU Special Education Fund (SEF) per school |
+
+The Capacity Gap denominator is the number of schools in the LGU (per-school SEF), providing a proxy for how thinly the LGU's education-earmarked revenue is spread across its schools.
+
+The composite priority score is the **product of percentile ranks** across all three pillars. Percentile ranks neutralize distribution skewness (assessed counts and SEF/school are both heavily right-skewed), ensuring each pillar contributes equally regardless of its raw distribution shape. A school must score high on all three dimensions to rank at the top.
+
+Reference: [`documentation/priority_ranking.md`](documentation/priority_ranking.md)
+
 ## 5. Key Results
 
 Using ordinal scoring across 29,854 schools with valid data at all three timepoints:
@@ -156,6 +172,8 @@ project_crla/
 │   ├── analysis.py                   PCA weights, ordinal scoring, performance
 │   │                                 scoring, chain-based progress
 │   ├── output.py                     Pairwise CSV export (91-column layout)
+│   ├── priority_ranking.py           Three-pillar priority ranking for intervention targeting
+│   ├── lgu_matching.py               School-to-LGU crosswalk and revenue matching
 │   ├── gcs_utils.py                  Google Cloud Storage paths and filesystem
 │   └── crla_v2.py                    Original reference implementation (legacy)
 │
@@ -164,11 +182,13 @@ project_crla/
 │   ├── step_1_schema_harmonizer.md   Schema normalization details
 │   ├── step_2_percentages_and_scoring.md  Scoring methodology comparison
 │   ├── step_3_chain_progress.md      Chain-based progress scoring
-│   └── step_4_output.md             Output format and verification
+│   ├── step_4_output.md             Output format and verification
+│   ├── priority_ranking.md          Three-pillar priority ranking methodology
+│   └── lgu_matching.md              School-to-LGU crosswalk and revenue matching
 │
 ├── data/
-│   ├── raw/                          Input CSVs (3 timepoints)
-│   └── modified/                     Pipeline outputs and reference files
+│   ├── raw/                          Input CSVs and external data files
+│   └── modified/                     Pipeline outputs, crosswalks, and reference files
 │
 └── README.md
 ```
