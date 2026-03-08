@@ -136,12 +136,16 @@ Streamlit dashboard for school heads. School-level view with:
 
 ```
 dashboard/
-  app.py              — Streamlit application
-  prepare_data.py     — data preparation script (run first)
-  data/               — pre-computed parquet files
+  app.py              — Streamlit entry point
+  pages/              — future multi-page views
+  components/         — reusable chart builders and UI helpers
+  scripts/            — data preparation and utilities
+    prepare_data.py
+    dashboard.ipynb
+  data/               — generated parquet files
 ```
 
-Run: `streamlit run dashboard/app.py --server.port 8050` (inside DS container after `python dashboard/prepare_data.py`)
+Run: `python dashboard/scripts/prepare_data.py` first, then `streamlit run dashboard/app.py --server.port 8050` (inside DS container)
 
 ## Unchanged
 - Five reading profiles: Lower Emergent, Higher Emergent, Developing, Transitioning, Grade Level

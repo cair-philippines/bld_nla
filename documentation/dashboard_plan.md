@@ -193,9 +193,13 @@ Uses the same 5-color scale as reading profiles, mapped to ordinal scores 1–5.
 
 ```
 dashboard/
-  app.py              — Streamlit application
-  prepare_data.py     — data preparation script
-  data/
+  app.py              — Streamlit entry point
+  pages/              — future multi-page views (Streamlit convention)
+  components/         — reusable chart builders and UI helpers
+  scripts/            — data preparation and one-off utilities
+    prepare_data.py
+    dashboard.ipynb
+  data/               — generated parquet files
     school_metadata.parquet
     school_profiles.parquet
     school_ordinal.parquet
