@@ -345,22 +345,20 @@ def _build_butterfly_chart(tp_bosy, tp_eosy, sy_label, value_col, display_mode):
     # Add center divider
     fig.add_vline(x=0, line_color="#333333", line_width=1.5)
 
-    # Add BoSY/EoSY annotations
+    # Add BoSY/EoSY annotations — use paper coordinates for consistent placement
     fig.add_annotation(
-        x=-50 if display_mode == "Percentage" else None,
+        x=0.25, xref="paper",
         y=1.08, yref="paper",
         text="<b>\u2190 BoSY</b>",
         showarrow=False,
         font=dict(size=13),
-        xref="x" if display_mode == "Percentage" else "paper",
     )
     fig.add_annotation(
-        x=50 if display_mode == "Percentage" else None,
+        x=0.75, xref="paper",
         y=1.08, yref="paper",
         text="<b>EoSY \u2192</b>",
         showarrow=False,
         font=dict(size=13),
-        xref="x" if display_mode == "Percentage" else "paper",
     )
 
     return fig

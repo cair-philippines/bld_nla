@@ -134,11 +134,13 @@ Streamlit dashboard for school heads. School-level view with:
 - Score trajectory line chart (school vs national)
 - Grade-language proficiency heatmap (6 groups × timepoints, color-coded 1-5)
 - Proficiency distribution shift (hybrid: cumulative CDF shift + per-profile diverging bars, user-selectable timepoint pair)
+- **Rankings page** (`pages/rankings.py`): top/bottom N schools by ordinal delta + grade-lang shift heatmap. Period dropdown (consecutive + year-over-year pairs), optional Region/Division filters, N input, Top/Bottom toggle. Truncated school labels with Division/Region.
 
 ```
 dashboard/
-  app.py              — Streamlit entry point
-  pages/              — future multi-page views
+  app.py              — Streamlit entry point (school-level view)
+  pages/
+    rankings.py       — school rankings view
   components/         — reusable chart builders and UI helpers
   scripts/            — data preparation and utilities
     prepare_data.py

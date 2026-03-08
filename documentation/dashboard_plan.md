@@ -2,14 +2,21 @@
 
 ## Purpose
 
-A Streamlit dashboard for school heads to view their school's CRLA reading proficiency performance across timepoints, with ordinal progress tracking.
+A Streamlit dashboard with two views:
+1. **School-level view** — for school heads to see their school's CRLA reading proficiency performance
+2. **Rankings view** — for division/regional administrators to identify top/bottom performing schools
 
 ## Target Users
 
-School heads who need to:
+**School heads** who need to:
 - See how their students are distributed across reading proficiency levels
 - Track whether reading performance improved or declined across assessment periods
 - Identify which grade levels and language groups need the most attention
+
+**Division/regional administrators** who need to:
+- Identify which schools improved the most or declined the most between timepoints
+- See at a glance which grade-language groups drove school-level gains or losses
+- Filter by region/division to focus on their jurisdiction
 
 ## Technology Stack
 
@@ -202,6 +209,58 @@ Profile color legend rendered once above all charts using HTML spans.
 - **Right panel (40%)**: Per-profile diverging bars showing percentage point change per profile, colored by profile. Bars right of zero = gained share, left = lost share.
 - **Purpose**: Shows whether learners "slid up or down" the proficiency ladder between any two timepoints, combining the directional flow story (left) with per-level detail (right).
 
+---
+
+## Page 2: School Rankings
+
+### Sidebar Filters
+
+```
+Region        [dropdown, default "All"]
+Division      [dropdown, filtered by Region, default "All"]
+Period        [single dropdown — consecutive + year-over-year pairs]
+N             [number input, 1-50, default 10]
+Show          [Top (most improved) / Bottom (most declined) radio]
+```
+
+Region and Division are optional geographic filters. The Period dropdown auto-generates valid timepoint pairs:
+- **Consecutive**: BoSY 2024-25 → EoSY 2024-25, EoSY 2024-25 → BoSY 2025-26
+- **Year-over-year** (same period): BoSY 2024-25 → BoSY 2025-26
+
+New pairs are added automatically when new timepoints are introduced.
+
+### Layout
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  Top/Bottom N Schools by Progress                                │
+│  BoSY 2024-25 → EoSY 2024-25 · Division: All · N = 10          │
+│                                                                  │
+│  ┌── Overall Delta ──┐  ┌── Shift by Grade / Language ────────┐ │
+│  │                    │  │         G1  G2MT G2Fil G3MT G3Fil G3E│ │
+│  │  1. School A ████  │  │  Sch A  🟩  🟩   🟩    🟩   🟥   🟩│ │
+│  │  2. School B ███   │  │  Sch B  🟩  🟩   🟩    🟩   🟩   🟩│ │
+│  │  3. School C ██    │  │  Sch C  🟩  🟥   🟩    🟩   🟩   🟩│ │
+│  │  4. School D ██    │  │  Sch D  🟩  🟩   🟩    🟥   🟩   🟩│ │
+│  │  5. School E █     │  │  Sch E  🟩  🟩   🟩    🟩   🟩   🟥│ │
+│  │                    │  │                                      │ │
+│  └────────────────────┘  └──────────────────────────────────────┘ │
+│                                                                  │
+│  Left: horizontal bars ranked by overall ordinal delta           │
+│  Right: heatmap with diverging red-white-green per grade-lang    │
+│  Cell annotations show delta values                              │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+- **Left panel (30%)**: Ranked horizontal bar chart of overall ordinal score delta. Green = positive, red = negative.
+- **Right panel (70%)**: Heatmap with rows = schools (same rank order), columns = 6 grade-language groups. Diverging red-white-green color scale centered at 0. Each cell annotated with the delta value.
+- **School labels**: "Rank. TruncatedName... (School ID)" with Division/Region on a second line (gray, smaller text). Names truncated to 25 characters.
+- **N parameter**: user-configurable via number input (1-50, default 10).
+- **No colorbar**: removed to save horizontal space; color meaning explained in expander.
+- **Blank cells**: grade-language data not available at one or both timepoints — explained in the "How to read this chart" expander.
+- **Column headers**: rendered via `st.columns` markdown above the chart (not Plotly subplot_titles) to avoid overlap with heatmap column labels.
+- **Purpose**: Administrators can quickly identify which schools improved/declined most and which grade-language groups drove the change.
+
 ## Color Palette
 
 ### Reading profiles (consistent across all charts)
@@ -220,8 +279,9 @@ Uses the same 5-color scale as reading profiles, mapped to ordinal scores 1–5.
 
 ```
 dashboard/
-  app.py              — Streamlit entry point
-  pages/              — future multi-page views (Streamlit convention)
+  app.py              — Streamlit entry point (school-level view)
+  pages/
+    rankings.py       — school rankings view
   components/         — reusable chart builders and UI helpers
   scripts/            — data preparation and one-off utilities
     prepare_data.py
