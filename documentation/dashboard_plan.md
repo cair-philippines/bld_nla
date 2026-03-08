@@ -4,7 +4,7 @@
 
 A Streamlit dashboard with two views:
 1. **School-level view** — for school heads to see their school's CRLA reading proficiency performance
-2. **Rankings view** — for division/regional administrators to identify top/bottom performing schools
+2. **Ranked View** — for division/regional administrators to identify top/bottom performing schools
 
 ## Target Users
 
@@ -211,17 +211,26 @@ Profile color legend rendered once above all charts using HTML spans.
 
 ---
 
-## Page 2: School Rankings
+## Page 2: Ranked View
 
 ### Sidebar Filters
 
 ```
+Rank by       [Delta / Weighted / Impact radio — prominent, top of sidebar]
+---
 Region        [dropdown, default "All"]
 Division      [dropdown, filtered by Region, default "All"]
+---
 Period        [single dropdown — consecutive + year-over-year pairs]
+---
 N             [number input, 1-50, default 10]
 Show          [Top (most improved) / Bottom (most declined) radio]
 ```
+
+**Rank by** is placed at the top of the sidebar for immediate visibility. Three ranking modes:
+- **Delta**: ranks purely by score change regardless of school size
+- **Weighted**: ranks by `delta × log(1 + assessed)` — gently dampens small-school noise; after a few hundred students the size factor barely matters
+- **Impact**: ranks by `delta × assessed` — prioritizes schools where the most students are affected; designed for intervention targeting where resources should reach the most learners
 
 Region and Division are optional geographic filters. The Period dropdown auto-generates valid timepoint pairs:
 - **Consecutive**: BoSY 2024-25 → EoSY 2024-25, EoSY 2024-25 → BoSY 2025-26
@@ -229,7 +238,40 @@ Region and Division are optional geographic filters. The Period dropdown auto-ge
 
 New pairs are added automatically when new timepoints are introduced.
 
-### Layout
+### Regional / Division Summary (collapsible)
+
+Above the school ranking, inside a collapsed `st.expander("Regional / Division Summary")`:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  ▸ Regional / Division Summary                                   │
+│                                                                  │
+│  When Region = "All":                                            │
+│  ┌── School Delta Distribution by Region ──────────────────────┐ │
+│  │  Boxplot per region, sorted by median (left to right)       │ │
+│  │  n= school count under each label                           │ │
+│  │  Dashed red line = national mean delta                      │ │
+│  │  Dotted black line = zero                                   │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                                                                  │
+│  When Region = specific:                                         │
+│  ┌── School Delta Distribution by Division in [Region] ────────┐ │
+│  │  Boxplot per division, sorted by median (left to right)     │ │
+│  │  n= school count under each label                           │ │
+│  │  Dashed red line = region mean delta                        │ │
+│  │  Dotted black line = zero                                   │ │
+│  │  Horizontal scroll when many divisions (180px per box)      │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                                                                  │
+│  When Division selected: info message to clear filter            │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+- Hover disabled on all boxplots (static, print-friendly)
+- Region boxplot uses `st.plotly_chart` with `use_container_width=True`
+- Division boxplot uses `st.components.v1.html` with `overflow-x:auto` for horizontal scroll when chart exceeds container width
+
+### School Ranking Layout
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -252,13 +294,16 @@ New pairs are added automatically when new timepoints are introduced.
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-- **Left panel (30%)**: Ranked horizontal bar chart of overall ordinal score delta. Green = positive, red = negative.
-- **Right panel (70%)**: Heatmap with rows = schools (same rank order), columns = 6 grade-language groups. Diverging red-white-green color scale centered at 0. Each cell annotated with the delta value.
-- **School labels**: "Rank. TruncatedName... (School ID)" with Division/Region on a second line (gray, smaller text). Names truncated to 25 characters.
+- **3-column layout**: delta bars (25%) + assessed count bars (15%) + grade-lang heatmap (60%)
+- **Delta bars (left)**: Ranked horizontal bars of overall ordinal score delta. Green = positive, red = negative. Symmetric x-axis range for readable labels on both positive and negative bars.
+- **Assessed bars (middle)**: Blue horizontal bars showing average learners assessed across the two timepoints.
+- **Heatmap (right)**: Rows = schools (same rank order), columns = 6 grade-language groups. Diverging red-white-green color scale centered at 0. Each cell annotated with the delta value. X-axis labels at bottom to avoid overlap with column header.
+- **Column headers**: Plotly annotations using `xref="x domain"` references — auto-centers each header within its subplot regardless of y-axis label width.
+- **School labels**: "Rank. TruncatedName... (School ID)" with Division/Region on a second line (gray, smaller text). Names truncated to 20 characters.
 - **N parameter**: user-configurable via number input (1-50, default 10).
 - **No colorbar**: removed to save horizontal space; color meaning explained in expander.
 - **Blank cells**: grade-language data not available at one or both timepoints — explained in the "How to read this chart" expander.
-- **Column headers**: rendered via `st.columns` markdown above the chart (not Plotly subplot_titles) to avoid overlap with heatmap column labels.
+- **Coexistence design**: Impact ranking determines which schools appear and in what order, while the heatmap and delta bars remain raw ordinal deltas — administrators see *where resources matter most* (Impact ranking) and *which grade-language groups drove the change* (heatmap).
 - **Purpose**: Administrators can quickly identify which schools improved/declined most and which grade-language groups drove the change.
 
 ## Color Palette
@@ -279,9 +324,10 @@ Uses the same 5-color scale as reading profiles, mapped to ordinal scores 1–5.
 
 ```
 dashboard/
-  app.py              — Streamlit entry point (school-level view)
+  app.py              — lightweight router (st.navigation + st.Page)
   pages/
-    rankings.py       — school rankings view
+    school_view.py    — School View (school-level analysis)
+    ranked_view.py    — Ranked View (top/bottom N schools)
   components/         — reusable chart builders and UI helpers
   scripts/            — data preparation and one-off utilities
     prepare_data.py
