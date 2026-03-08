@@ -716,3 +716,223 @@ st.caption(
     "Green cells show grade-language groups approaching grade level. "
     "Values show the ordinal score (1\u20135) with comparison to the national mean."
 )
+
+st.markdown("---")
+
+# =========================================================================
+# Section E: Proficiency Distribution Shift (Hybrid)
+# =========================================================================
+
+st.subheader("Proficiency Distribution Shift")
+
+# Timepoint selectors
+if len(available_tps) >= 2:
+    shift_cols = st.columns(2)
+    with shift_cols[0]:
+        tp_from = st.selectbox(
+            "From",
+            options=available_tps,
+            index=0,
+            key="shift_from",
+        )
+    with shift_cols[1]:
+        # Default "To" = next timepoint after "From"
+        from_idx = available_tps.index(tp_from)
+        default_to = min(from_idx + 1, len(available_tps) - 1)
+        to_options = [tp for tp in available_tps if tp != tp_from]
+        tp_to = st.selectbox(
+            "To",
+            options=to_options,
+            index=min(default_to - (1 if default_to > from_idx else 0), len(to_options) - 1)
+                if to_options else 0,
+            key="shift_to",
+        )
+
+    # Get profile data for the two selected timepoints
+    from_profiles = school_profiles[school_profiles["timepoint_label"] == tp_from]
+    to_profiles = school_profiles[school_profiles["timepoint_label"] == tp_to]
+
+    if from_profiles.empty or to_profiles.empty:
+        st.warning("Profile data not available for the selected timepoints.")
+    else:
+        # Aggregate across all grade-language groups: total % per profile
+        from_totals = from_profiles.groupby("profile")["raw_count"].sum()
+        to_totals = to_profiles.groupby("profile")["raw_count"].sum()
+
+        from_grand = from_totals.sum()
+        to_grand = to_totals.sum()
+
+        from_pcts = [(from_totals.get(p, 0) / from_grand * 100) if from_grand > 0 else 0 for p in PROFILE_ORDER]
+        to_pcts = [(to_totals.get(p, 0) / to_grand * 100) if to_grand > 0 else 0 for p in PROFILE_ORDER]
+
+        cum_from = np.cumsum(from_pcts).tolist()
+        cum_to = np.cumsum(to_pcts).tolist()
+        deltas = [t - f for f, t in zip(from_pcts, to_pcts)]
+
+        from plotly.subplots import make_subplots
+
+        fig_hybrid = make_subplots(
+            rows=1, cols=2,
+            column_widths=[0.6, 0.4],
+            horizontal_spacing=0.12,
+            subplot_titles=[
+                "Cumulative Distribution Shift",
+                "Per-Profile Change (pp)",
+            ],
+        )
+
+        # --- Left panel: Cumulative shift ---
+
+        # Smart text positioning: place "from" labels above, "to" labels below,
+        # but at Grade Level (always 100%) offset them left to avoid overlap
+        from_positions = []
+        to_positions = []
+        for i in range(len(PROFILE_ORDER)):
+            gap = abs(cum_from[i] - cum_to[i])
+            if gap < 4:
+                # Points too close — stagger left/right
+                from_positions.append("top left")
+                to_positions.append("bottom right")
+            else:
+                from_positions.append("top center")
+                to_positions.append("bottom center")
+
+        fig_hybrid.add_trace(go.Scatter(
+            x=PROFILE_ORDER,
+            y=cum_from,
+            mode="lines+markers+text",
+            name=tp_from,
+            line=dict(color="#4A90D9", width=3),
+            marker=dict(size=10),
+            text=[f"{v:.1f}%" for v in cum_from],
+            textposition=from_positions,
+            textfont=dict(size=9),
+            legendgroup="from",
+            hovertemplate="%{x}<br>Cumulative: %{y:.1f}%<extra>" + tp_from + "</extra>",
+        ), row=1, col=1)
+
+        fig_hybrid.add_trace(go.Scatter(
+            x=PROFILE_ORDER,
+            y=cum_to,
+            mode="lines+markers+text",
+            name=tp_to,
+            line=dict(color="#E74C3C", width=3),
+            marker=dict(size=10),
+            text=[f"{v:.1f}%" for v in cum_to],
+            textposition=to_positions,
+            textfont=dict(size=9),
+            legendgroup="to",
+            hovertemplate="%{x}<br>Cumulative: %{y:.1f}%<extra>" + tp_to + "</extra>",
+        ), row=1, col=1)
+
+        # Shade gap
+        net_shift = sum(cum_from[i] - cum_to[i] for i in range(len(PROFILE_ORDER) - 1))
+        if net_shift > 0:
+            fill_color = "rgba(34, 139, 34, 0.15)"
+            shade_y = cum_from + cum_to[::-1]
+        else:
+            fill_color = "rgba(220, 20, 60, 0.15)"
+            shade_y = cum_to + cum_from[::-1]
+
+        fig_hybrid.add_trace(go.Scatter(
+            x=PROFILE_ORDER + PROFILE_ORDER[::-1],
+            y=shade_y,
+            fill="toself",
+            fillcolor=fill_color,
+            line=dict(width=0),
+            showlegend=False,
+            hoverinfo="skip",
+        ), row=1, col=1)
+
+        # Gap annotations (skip Grade Level — always 100%)
+        for i in range(len(PROFILE_ORDER) - 1):
+            gap = cum_from[i] - cum_to[i]
+            if abs(gap) > 0.5:
+                mid_y = (cum_from[i] + cum_to[i]) / 2
+                fig_hybrid.add_annotation(
+                    x=PROFILE_ORDER[i], y=mid_y,
+                    text=f"<b>{gap:+.1f}pp</b>",
+                    showarrow=False,
+                    font=dict(size=10, color="#228B22" if gap > 0 else "#DC143C"),
+                    bgcolor="rgba(255,255,255,0.8)",
+                    xref="x1", yref="y1",
+                )
+
+        # --- Right panel: Diverging bars ---
+
+        fig_hybrid.add_trace(go.Bar(
+            y=PROFILE_ORDER,
+            x=deltas,
+            orientation="h",
+            marker_color=[PROFILE_COLORS[p] for p in PROFILE_ORDER],
+            text=[f"{d:+.1f}" for d in deltas],
+            textposition="outside",
+            textfont=dict(size=11),
+            showlegend=False,
+            hovertemplate="%{y}: %{x:+.1f}pp<extra></extra>",
+            cliponaxis=False,
+        ), row=1, col=2)
+
+        fig_hybrid.add_vline(x=0, line_color="#333333", line_width=1.5, row=1, col=2)
+
+        # Layout
+        max_abs_delta = max(abs(d) for d in deltas) if deltas else 10
+        bar_pad = max_abs_delta * 0.35  # extra room for outside labels
+
+        fig_hybrid.update_layout(
+            height=450,
+            margin=dict(l=20, r=60, t=40, b=100),
+            legend=dict(
+                orientation="h",
+                yanchor="top",
+                y=-0.22,
+                xanchor="center",
+                x=0.3,
+            ),
+        )
+
+        # Left panel axes
+        fig_hybrid.update_xaxes(
+            title=None,
+            tickangle=-30,
+            tickfont=dict(size=10),
+            row=1, col=1,
+        )
+        fig_hybrid.update_yaxes(
+            title="Cumulative %",
+            range=[0, 108],
+            row=1, col=1,
+        )
+
+        # Right panel axes
+        fig_hybrid.update_xaxes(
+            title="Percentage Points",
+            range=[min(min(deltas), 0) - bar_pad, max(max(deltas), 0) + bar_pad],
+            row=1, col=2,
+        )
+        fig_hybrid.update_yaxes(
+            categoryorder="array",
+            categoryarray=list(reversed(PROFILE_ORDER)),
+            tickfont=dict(size=10),
+            row=1, col=2,
+        )
+
+        st.plotly_chart(fig_hybrid, use_container_width=True)
+
+        # Interpretation
+        with st.expander("How to read this chart"):
+            st.markdown(f"""
+            **Left panel (Cumulative Distribution Shift):**
+            Each point shows what % of learners are at or below that proficiency level.
+            - If the **{tp_to}** curve sits **below** the **{tp_from}** curve, learners shifted **upward** (green shading = improvement).
+            - If it sits **above**, learners shifted **downward** (red shading = regression).
+            - The gap annotations show the difference in percentage points.
+            - Both lines meet at 100% for Grade Level by definition (all learners are at or below the highest level).
+
+            **Right panel (Per-Profile Change):**
+            Shows the percentage point change in each profile's share.
+            - Lower profiles (LE, HE) losing share + higher profiles (Trans, GL) gaining share = upward movement.
+            """)
+
+else:
+    st.info("At least two timepoints are needed to show the distribution shift.")

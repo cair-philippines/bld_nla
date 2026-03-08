@@ -133,6 +133,7 @@ Streamlit dashboard for school heads. School-level view with:
 - Ordinal progress score deltas with neutral timepoint labels and national comparison
 - Score trajectory line chart (school vs national)
 - Grade-language proficiency heatmap (6 groups × timepoints, color-coded 1-5)
+- Proficiency distribution shift (hybrid: cumulative CDF shift + per-profile diverging bars, user-selectable timepoint pair)
 
 ```
 dashboard/

@@ -175,6 +175,33 @@ Profile color legend rendered once above all charts using HTML spans.
 - **Purpose**: school heads can instantly see red cells = areas needing attention
 - Replaces the previous grouped bar chart which was less intuitive for identifying focus areas
 
+### Section E: Proficiency Distribution Shift (Hybrid)
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Proficiency Distribution Shift                          │
+│                                                          │
+│  From: [BoSY 2024-25 ▼]     To: [EoSY 2024-25 ▼]       │
+│                                                          │
+│  ┌─── Cumulative Dist. ────┐  ┌── Per-Profile Change ──┐│
+│  │                         │  │                         ││
+│  │  Two cumulative curves  │  │  Horizontal diverging   ││
+│  │  (from=blue, to=red)    │  │  bars per profile       ││
+│  │  Green/red shaded gap   │  │  colored by profile     ││
+│  │  Gap annotations (pp)   │  │  Text labels outside    ││
+│  │                         │  │                         ││
+│  └─────────────────────────┘  └─────────────────────────┘│
+│                                                          │
+│  Legend: BoSY 2024-25 ● EoSY 2024-25 ●                  │
+│  [▸ How to read this chart]                              │
+└──────────────────────────────────────────────────────────┘
+```
+
+- **User-selectable timepoint pair**: "From" and "To" dropdowns above the chart
+- **Left panel (60%)**: Cumulative distribution shift — each point = % of learners at or below that level. Curve below = upward shift (green gap), curve above = downward shift (red gap). Data labels with smart positioning to avoid overlap.
+- **Right panel (40%)**: Per-profile diverging bars showing percentage point change per profile, colored by profile. Bars right of zero = gained share, left = lost share.
+- **Purpose**: Shows whether learners "slid up or down" the proficiency ladder between any two timepoints, combining the directional flow story (left) with per-level detail (right).
+
 ## Color Palette
 
 ### Reading profiles (consistent across all charts)
