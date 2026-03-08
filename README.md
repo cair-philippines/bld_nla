@@ -1,12 +1,12 @@
 # CRLA Multi-Year Reading Proficiency Analysis
 
-## Abstract
+## 1. Abstract
 
 The Classroom Reading Level Assessment (CRLA) is the Department of Education's standardized tool for measuring early-grade reading proficiency across Philippine public schools. This project implements a reproducible, multi-timepoint analytical pipeline that harmonizes raw CRLA data across school years, computes ordinal proficiency scores for each school, and tracks progress between consecutive assessment periods.
 
 Three timepoints are currently covered: Beginning of School Year (BoSY) 2024-25, End of School Year (EoSY) 2024-25, and BoSY 2025-26. The pipeline produces segment-level deltas for each consecutive pair (BoSY 2024-25 to EoSY 2024-25 and EoSY 2024-25 to BoSY 2025-26), as well as a composite progress score across the full chain. Key results: the national mean ordinal score rose from 3.30 to 4.13 between BoSY and EoSY 2024-25 (+0.82), then declined to 3.06 by BoSY 2025-26 (-1.04), yielding a net composite of -0.14 across 29,854 schools with valid data at all three timepoints.
 
-## Background
+## 2. Background
 
 CRLA classifies each assessed learner into one of five reading proficiency levels, ordered from lowest to highest:
 
@@ -33,9 +33,9 @@ Each school's raw data consists of student counts per proficiency level for each
 
 The central policy question this analysis addresses: **Are learners improving across assessment periods, and where should reading interventions be focused?**
 
-## Data
+## 3. Data
 
-### Input Files
+### 3.1 Input Files
 
 | Timepoint | File | Approximate Schools |
 |-----------|------|-------------------|
@@ -45,7 +45,7 @@ The central policy question this analysis addresses: **Are learners improving ac
 
 Raw files are located in `data/raw/`.
 
-### Schema Hazards
+### 3.2 Schema Hazards
 
 The raw CSVs from different school years exhibit several inconsistencies that the pipeline resolves automatically:
 
@@ -56,11 +56,11 @@ The raw CSVs from different school years exhibit several inconsistencies that th
 
 These are documented in detail in [`documentation/step_1_schema_harmonizer.md`](documentation/step_1_schema_harmonizer.md).
 
-## Methodology
+## 4. Methodology
 
 The pipeline follows four sequential steps. Each step has a corresponding detailed reference document in `documentation/`.
 
-### Step 1 — Schema Harmonization
+### 4.1 Step 1 — Schema Harmonization
 
 Raw CSVs from different school years are normalized into an identical 49-column schema (47 canonical columns + `school_year` and `period` metadata). Column matching is **name-based, not positional**, which avoids the column-swap bugs present in earlier positional (`iloc`) approaches.
 
@@ -72,7 +72,7 @@ Key operations:
 
 Reference: [`documentation/step_1_schema_harmonizer.md`](documentation/step_1_schema_harmonizer.md)
 
-### Step 2 — Ordinal Scoring
+### 4.2 Step 2 — Ordinal Scoring
 
 For each school at each timepoint, raw student counts are converted to percentages within each grade-language group, then summarized into a single ordinal proficiency score on a 1-5 scale.
 
@@ -97,7 +97,7 @@ Per-timepoint validation flags schools with insufficient data (e.g., missing gra
 
 Reference: [`documentation/step_2_percentages_and_scoring.md`](documentation/step_2_percentages_and_scoring.md)
 
-### Step 3 — Chain-Based Progress Scoring
+### 4.3 Step 3 — Chain-Based Progress Scoring
 
 An ordered time chain defines the sequence of assessment periods:
 
@@ -116,7 +116,7 @@ The pipeline extends automatically when new timepoints are added — appending a
 
 Reference: [`documentation/step_3_chain_progress.md`](documentation/step_3_chain_progress.md)
 
-### Step 4 — Output
+### 4.4 Step 4 — Output
 
 The pipeline exports one CSV per consecutive timepoint pair, with 91 columns matching the layout established by the original `crla_v2.py` reference implementation. Each file contains:
 
@@ -127,7 +127,7 @@ The pipeline exports one CSV per consecutive timepoint pair, with 91 columns mat
 
 Reference: [`documentation/step_4_output.md`](documentation/step_4_output.md)
 
-## Key Results
+## 5. Key Results
 
 Using ordinal scoring across 29,854 schools with valid data at all three timepoints:
 
@@ -145,7 +145,7 @@ Using ordinal scoring across 29,854 schools with valid data at all three timepoi
 
 The within-year gain (BoSY to EoSY 2024-25) indicates that schools moved learners upward by nearly a full proficiency level on average. However, the cross-year decline (EoSY 2024-25 to BoSY 2025-26) more than offset this gain, resulting in a small net regression over the full observation window.
 
-## Repository Structure
+## 6. Repository Structure
 
 ```
 project_crla/
@@ -173,15 +173,15 @@ project_crla/
 └── README.md
 ```
 
-## Reproducibility
+## 7. Reproducibility
 
-### Dependencies
+### 7.1 Dependencies
 
 - Python 3.11+
 - pandas, numpy (data processing)
 - scikit-learn (PCA scoring, optional)
 
-### Running the Pipeline
+### 7.2 Running the Pipeline
 
 **1. Load and harmonize data:**
 
@@ -229,11 +229,11 @@ export_pairwise_csvs(
 )
 ```
 
-### Data Access
+### 7.3 Data Access
 
 Raw input files can be loaded from local paths (as shown above) or from Google Cloud Storage. The default configuration in `modules/gcs_utils.py` points to the GCS bucket `data_ecair_paaral/raw/`. For local execution, pass a custom `file_map` to `load_all_assessments()` as shown in the reproducibility steps.
 
-### Adding New Timepoints
+### 7.4 Adding New Timepoints
 
 When new assessment data becomes available:
 
