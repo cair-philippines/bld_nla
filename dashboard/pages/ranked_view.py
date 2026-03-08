@@ -47,12 +47,21 @@ def load_ordinal():
     return pd.read_parquet(DATA_DIR / "school_ordinal.parquet")
 
 
+@st.cache_data
+def load_priority():
+    path = DATA_DIR / "school_priority.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Load data
 # ---------------------------------------------------------------------------
 
 metadata = load_metadata()
 ordinal = load_ordinal()
+priority_df = load_priority()
 
 # Exclude national mean row
 ordinal_schools = ordinal[ordinal["School ID"] != -1].copy()
@@ -65,11 +74,12 @@ st.sidebar.title("School Rankings")
 st.sidebar.markdown("---")
 
 # Sort mode (prominent position)
+_sort_options = ["Delta", "Weighted", "Priority"]
 sort_mode = st.sidebar.radio(
     "Rank by",
-    ["Delta", "Weighted", "Impact"],
+    _sort_options,
     horizontal=True,
-    help="**Delta**: ranks purely by score change. **Weighted**: dampens small-school noise (delta × log N). **Impact**: prioritizes where the most students are affected (delta × N).",
+    help="**Delta**: ranks purely by score change. **Weighted**: dampens small-school noise (delta × log N). **Priority**: three-pillar composite (Need × Impact × Capacity Gap percentile ranks).",
 )
 
 st.sidebar.markdown("---")
@@ -143,8 +153,11 @@ st.sidebar.markdown("---")
 
 # N and rank direction
 n_schools = st.sidebar.number_input("N (number of schools)", min_value=1, max_value=50, value=10, step=1)
-rank_direction = st.sidebar.radio("Show", ["Top (most improved)", "Bottom (most declined)"], horizontal=True)
-is_top = rank_direction.startswith("Top")
+if sort_mode == "Priority":
+    is_top = True
+else:
+    rank_direction = st.sidebar.radio("Show", ["Top (most improved)", "Bottom (most declined)"], horizontal=True)
+    is_top = rank_direction.startswith("Top")
 
 # ---------------------------------------------------------------------------
 # Compute deltas
@@ -200,15 +213,44 @@ delta_df = delta_df.merge(
 
 # Compute derived ranking scores
 delta_df["weighted_score"] = delta_df["delta_overall"] * np.log1p(delta_df["total_assessed"])
-delta_df["impact_score"] = delta_df["delta_overall"] * delta_df["total_assessed"]
+
+# Join priority data if available
+has_priority = False
+if priority_df is not None and sort_mode == "Priority":
+    # Match on School ID + timepoint pair
+    seg_priority = priority_df[
+        (priority_df["tp_from"] == tp_from) & (priority_df["tp_to"] == tp_to)
+    ].copy()
+    if len(seg_priority) > 0:
+        delta_df = delta_df.merge(
+            seg_priority[["School ID", "need_pctile", "impact_pctile",
+                          "capacity_gap_pctile", "priority_score", "priority_pctile",
+                          "lgu_name", "sef_per_school"]],
+            on="School ID",
+            how="left",
+        )
+        has_priority = True
 
 # Rank
-sort_col_map = {"Delta": "delta_overall", "Weighted": "weighted_score", "Impact": "impact_score"}
+sort_col_map = {"Delta": "delta_overall", "Weighted": "weighted_score", "Priority": "priority_pctile"}
 sort_col = sort_col_map[sort_mode]
-if is_top:
-    ranked = delta_df.nlargest(n_schools, sort_col)
+
+if sort_mode == "Priority" and not has_priority:
+    st.warning("Priority data not available for this timepoint pair. Falling back to Delta ranking.")
+    sort_col = "delta_overall"
+
+if sort_mode == "Priority" and has_priority:
+    # Priority: always show highest-priority first (descending); top/bottom
+    # flips between highest-priority and lowest-priority schools
+    if is_top:
+        ranked = delta_df.dropna(subset=["priority_pctile"]).nlargest(n_schools, sort_col)
+    else:
+        ranked = delta_df.dropna(subset=["priority_pctile"]).nsmallest(n_schools, sort_col)
 else:
-    ranked = delta_df.nsmallest(n_schools, sort_col)
+    if is_top:
+        ranked = delta_df.nlargest(n_schools, sort_col)
+    else:
+        ranked = delta_df.nsmallest(n_schools, sort_col)
 
 ranked = ranked.reset_index(drop=True)
 
@@ -217,7 +259,11 @@ ranked = ranked.reset_index(drop=True)
 # ---------------------------------------------------------------------------
 
 direction_label = "Top" if is_top else "Bottom"
-st.title(f"{direction_label} {len(ranked)} Schools by Progress")
+if sort_mode == "Priority" and has_priority:
+    title_suffix = "by Priority" if is_top else "(Lowest Priority)"
+else:
+    title_suffix = "by Progress"
+st.title(f"{direction_label} {len(ranked)} Schools {title_suffix}")
 
 subtitle_parts = [f"{tp_from} \u2192 {tp_to}"]
 if selected_region != "All":
@@ -372,18 +418,29 @@ n_display = len(ranked)
 
 MAX_NAME_LEN = 20
 
-def _truncate_label(row, rank):
-    """Truncate school name, add ID, region/division on second line."""
+def _truncate_label(row, rank, show_pillars=False):
+    """Truncate school name, add ID, region/division on second line.
+
+    When show_pillars=True, adds a third line with Need/Impact/Gap percentiles.
+    """
     name = row["School Name"]
     if len(name) > MAX_NAME_LEN:
         name = name[:MAX_NAME_LEN].rstrip() + "..."
     sid = int(row["School ID"])
     line1 = f"{rank}. {name} ({sid})"
     line2 = f"   {row['Division']}, {row['Region']}"
-    return f"{line1}<br><span style='font-size:9px;color:#888'>{line2}</span>"
+    label = f"{line1}<br><span style='font-size:9px;color:#888'>{line2}</span>"
+    if show_pillars and "need_pctile" in row.index and pd.notna(row.get("need_pctile")):
+        n = row["need_pctile"]
+        im = row["impact_pctile"]
+        g = row["capacity_gap_pctile"]
+        line3 = f"   Need {n:.0%} · Impact {im:.0%} · Gap {g:.0%}"
+        label += f"<br><span style='font-size:9px;color:#4a7c9b'>{line3}</span>"
+    return label
 
+show_pillars = sort_mode == "Priority" and has_priority
 school_labels = [
-    _truncate_label(row, i + 1)
+    _truncate_label(row, i + 1, show_pillars=show_pillars)
     for i, row in ranked.iterrows()
 ]
 
@@ -472,7 +529,7 @@ for i, row in ranked.iterrows():
 
 # Layout
 fig.update_layout(
-    height=max(400, 80 + n_display * 60),
+    height=max(400, 80 + n_display * (75 if show_pillars else 60)),
     margin=dict(l=20, r=20, t=70, b=40),
 )
 
@@ -546,14 +603,21 @@ with st.expander("How to read this chart"):
     **Ranking modes:**
     - **Delta**: ranks purely by score change regardless of school size. Small schools with few learners can appear at the top with extreme deltas that may not be statistically reliable.
     - **Weighted**: ranks by *delta × log(assessed learners)*. Gently dampens small-school noise — after a few hundred students, the size factor barely matters.
-    - **Impact**: ranks by *delta × assessed learners*. Prioritizes schools where the most students are affected. A large school with a moderate decline outranks a small school in freefall, answering "where are the most learners being left behind?"
+    - **Priority**: three-pillar composite for intervention targeting. Combines **Need** (ordinal mean, SD, skewness, and their deltas), **Impact** (assessed learner count), and **Capacity Gap** (inverse LGU Special Education Fund per school). Each pillar is converted to a percentile rank, and the composite is their product — a school must score high on all three to rank at the top. The pillar percentiles are shown below each school name.
     """)
 
 # Summary stats
 st.markdown("---")
 st.markdown("##### Summary")
 
-col1, col2, col3 = st.columns(3)
-col1.metric("Schools shown", f"{n_display}")
-col2.metric("Mean delta", f"{ranked['delta_overall'].mean():+.3f}")
-col3.metric("Median delta", f"{ranked['delta_overall'].median():+.3f}")
+if show_pillars:
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Schools shown", f"{n_display}")
+    col2.metric("Mean delta", f"{ranked['delta_overall'].mean():+.3f}")
+    col3.metric("Median priority pctile", f"{ranked['priority_pctile'].median():.0%}")
+    col4.metric("Priority-eligible", f"{delta_df['priority_pctile'].notna().sum():,} of {len(delta_df):,}")
+else:
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Schools shown", f"{n_display}")
+    col2.metric("Mean delta", f"{ranked['delta_overall'].mean():+.3f}")
+    col3.metric("Median delta", f"{ranked['delta_overall'].median():+.3f}")

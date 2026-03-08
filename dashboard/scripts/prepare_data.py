@@ -23,13 +23,26 @@ from preprocessing import (
     load_all_assessments,
     compute_percentages,
     validate_timepoint,
+    _clean_raw_to_numeric,
     READING_PROFILES,
     GRADE_LANGUAGE_GROUPS,
     CANONICAL_GRADE_COLUMNS,
     METADATA_COLUMNS,
     _get_group_columns,
 )
-from analysis import ORDINAL_WEIGHTS
+from analysis import (
+    ORDINAL_WEIGHTS,
+    TIME_CHAIN,
+    process_all_timepoints,
+    compute_chain_progress,
+)
+from lgu_matching import (
+    load_deped_psgc,
+    load_lgu_revenue,
+    build_school_lgu_crosswalk,
+    match_lgu_revenue,
+)
+from priority_ranking import compute_priority_ranking
 
 # ---------------------------------------------------------------------------
 # Config
@@ -295,6 +308,67 @@ def build_ordinal(df_all, percentages, validation):
 
 
 # ---------------------------------------------------------------------------
+# Build school_priority
+# ---------------------------------------------------------------------------
+
+# External data paths (relative to project root)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PSGC_PATH = PROJECT_ROOT / "data/raw/SY 2024-2025 School Level Database WITH PSGC.xlsx"
+BLGF_PATH = PROJECT_ROOT / "data/raw/By-LGU-SRE-2024.xlsx"
+
+
+def build_priority(df_all):
+    """Priority ranking per school x segment with three-pillar percentiles.
+
+    Runs the full pipeline (ordinal moments → chain progress → priority
+    ranking) and returns a DataFrame with one row per school per segment.
+    """
+    results = process_all_timepoints(df_all, scoring="ordinal")
+    progress_df = compute_chain_progress(
+        performance=results["performance"],
+        raw_data=df_all,
+        validation=results["validation"],
+        time_chain=TIME_CHAIN,
+        ordinal_sd=results.get("ordinal_sd"),
+        ordinal_skew=results.get("ordinal_skew"),
+    )
+
+    # LGU matching
+    psgc_df = load_deped_psgc(str(PSGC_PATH))
+    crosswalk_df = build_school_lgu_crosswalk(psgc_df)
+    lgu_revenue_df = load_lgu_revenue(str(BLGF_PATH))
+    matched_lgu_df, _, _ = match_lgu_revenue(crosswalk_df, lgu_revenue_df)
+
+    all_segments = []
+    for seg_idx in range(len(TIME_CHAIN) - 1):
+        t_from = TIME_CHAIN[seg_idx]
+        t_to = TIME_CHAIN[seg_idx + 1]
+        tp_from_label = _timepoint_label(*t_from)
+        tp_to_label = _timepoint_label(*t_to)
+
+        ranking_df, summary = compute_priority_ranking(
+            progress_df, seg_idx, TIME_CHAIN,
+            crosswalk_df, matched_lgu_df,
+        )
+
+        seg = pd.DataFrame({
+            "School ID": ranking_df.index,
+            "tp_from": tp_from_label,
+            "tp_to": tp_to_label,
+            "need_pctile": ranking_df["need_pctile"].values,
+            "impact_pctile": ranking_df["impact_pctile"].values,
+            "capacity_gap_pctile": ranking_df["capacity_gap_pctile"].values,
+            "priority_score": ranking_df["priority_score"].values,
+            "priority_pctile": ranking_df["priority_pctile"].values,
+            "lgu_name": ranking_df["lgu_name"].values,
+            "sef_per_school": ranking_df["sef_per_school"].values,
+        })
+        all_segments.append(seg)
+
+    return pd.concat(all_segments, ignore_index=True)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -307,7 +381,10 @@ def main():
     validation = {}
     for key, df in df_all.items():
         percentages[key] = compute_percentages(df)
-        validation[key] = validate_timepoint(percentages[key])
+        validation[key] = validate_timepoint(
+            percentages[key],
+            raw_counts_df=_clean_raw_to_numeric(df),
+        )
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -325,6 +402,11 @@ def main():
     ordinal = build_ordinal(df_all, percentages, validation)
     ordinal.to_parquet(OUTPUT_DIR / "school_ordinal.parquet", index=False)
     print(f"  → {len(ordinal)} rows")
+
+    print("Building school_priority ...")
+    priority = build_priority(df_all)
+    priority.to_parquet(OUTPUT_DIR / "school_priority.parquet", index=False)
+    print(f"  → {len(priority)} rows ({priority['tp_from'].nunique()} segments)")
 
     print(f"\nAll files written to {OUTPUT_DIR}/")
 
