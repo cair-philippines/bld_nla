@@ -121,6 +121,28 @@ See `documentation/step_4_output.md`.
 | Interpretability | Opaque | "Average student is at level 3.3" |
 | Recommendation | Exploratory/research use | **Preferred for intervention targeting** |
 
+## Dashboard
+
+See `documentation/dashboard_plan.md`.
+
+Streamlit dashboard for school heads. School-level view with:
+- Cascading filters (Region → Division → School) with text search for school name
+- Total assessed learners per timepoint
+- Butterfly/tornado charts for same-year BoSY vs EoSY profile comparison
+- Standard stacked bars for standalone timepoints
+- Ordinal progress score deltas with neutral timepoint labels and national comparison
+- Score trajectory line chart (school vs national)
+- Grade-language proficiency heatmap (6 groups × timepoints, color-coded 1-5)
+
+```
+dashboard/
+  app.py              — Streamlit application
+  prepare_data.py     — data preparation script (run first)
+  data/               — pre-computed parquet files
+```
+
+Run: `streamlit run dashboard/app.py --server.port 8050` (inside DS container after `python dashboard/prepare_data.py`)
+
 ## Unchanged
 - Five reading profiles: Lower Emergent, Higher Emergent, Developing, Transitioning, Grade Level
 - Grade structure: G1, G2 (MT/Fil), G3 (MT/Fil/Eng)
