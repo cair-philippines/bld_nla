@@ -88,9 +88,11 @@ Within each of the six grade-language groups, raw counts are divided by the grou
 
 The ordinal mean is a weighted average of the proficiency distribution, averaged across all grade-language groups with data:
 
-$$\bar{x}_s = \frac{1}{G} \sum_{g=1}^{G} \sum_{k=1}^{5} p_{s,g,k} \cdot w_k$$
+```math
+\bar{x}_s = \frac{1}{G} \sum_{g=1}^{G} \sum_{k=1}^{5} p_{s,g,k} \cdot w_k
+```
 
-where $p_{s,g,k}$ is the percentage of learners in school $s$, grade-language group $g$, at proficiency level $k$, and $w_k \in \{1, 2, 3, 4, 5\}$ are the ordinal values from Lower Emergent to Grade Level. The result is a score on the 1-5 scale: a value of 3.30 means the average learner in that school falls between the Developing and Transitioning levels.
+where *p* is the percentage of learners in school *s*, grade-language group *g*, at proficiency level *k*, and *w* &isin; {1, 2, 3, 4, 5} are the ordinal values from Lower Emergent to Grade Level. The result is a score on the 1-5 scale: a value of 3.30 means the average learner in that school falls between the Developing and Transitioning levels.
 
 **Why ordinal scoring over PCA.** An alternative PCA-based scoring method was explored, where weights are derived from the first principal component of the proficiency distribution. PCA weights proved unstable across reference timepoints — Grade Level receives weight 0 under a BoSY reference but weight 100 under an EoSY reference. The ordinal method uses fixed, interpretable weights that require no reference period.
 
@@ -105,7 +107,9 @@ where $p_{s,g,k}$ is the percentage of learners in school $s$, grade-language gr
 
 The ordinal standard deviation measures how spread out a school's learners are across proficiency levels:
 
-$$\sigma_s = \sqrt{\frac{1}{G} \sum_{g=1}^{G} \sum_{k=1}^{5} p_{s,g,k} \cdot (w_k - \bar{x}_{s,g})^2}$$
+```math
+\sigma_s = \sqrt{\frac{1}{G} \sum_{g=1}^{G} \sum_{k=1}^{5} p_{s,g,k} \cdot (w_k - \bar{x}_{s,g})^2}
+```
 
 A low SD indicates learners are clustered around the mean level; a high SD indicates a wide spread (e.g., many learners at both Grade Level and Lower Emergent). Higher SD signals greater within-school inequality.
 
@@ -113,7 +117,9 @@ A low SD indicates learners are clustered around the mean level; a high SD indic
 
 The ordinal skewness captures asymmetry in the proficiency distribution:
 
-$$\gamma_s = \frac{1}{G} \sum_{g=1}^{G} \frac{\sum_{k=1}^{5} p_{s,g,k} \cdot (w_k - \bar{x}_{s,g})^3}{\sigma_{s,g}^3}$$
+```math
+\gamma_s = \frac{1}{G} \sum_{g=1}^{G} \frac{\sum_{k=1}^{5} p_{s,g,k} \cdot (w_k - \bar{x}_{s,g})^3}{\sigma_{s,g}^3}
+```
 
 Negative skewness (the national tendency) indicates a long lower tail — most learners are at higher levels but a subset remains at lower ones. Positive skewness indicates the reverse. Schools with zero SD (all learners at one level) have undefined skewness, treated as missing.
 
@@ -131,7 +137,9 @@ Each school is validated at two tiers. The **basic** tier requires at least one 
 
 A segment delta between two timepoints additionally requires: (1) both endpoints pass basic validation, and (2) the total assessed student count does not change by more than 25% between endpoints.
 
-$$\text{valid\_segment} = \text{valid}_{t_0} \;\wedge\; \text{valid}_{t_1} \;\wedge\; \left(\frac{|N_{t_1} - N_{t_0}|}{N_{t_0}} \leq 0.25\right)$$
+```math
+\text{valid\_segment} = \text{valid}_{t_0} \;\wedge\; \text{valid}_{t_1} \;\wedge\; \left(\frac{|N_{t_1} - N_{t_0}|}{N_{t_0}} \leq 0.25\right)
+```
 
 The count-stability check guards against school mergers, splits, or data-entry errors that would make a progress comparison misleading.
 
@@ -139,15 +147,21 @@ The count-stability check guards against school mergers, splits, or data-entry e
 
 An ordered time chain defines the sequence of assessment periods:
 
-$$t_1 \;\rightarrow\; t_2 \;\rightarrow\; t_3 \quad = \quad \text{BoSY 2024-25} \;\rightarrow\; \text{EoSY 2024-25} \;\rightarrow\; \text{BoSY 2025-26}$$
+```math
+t_1 \;\rightarrow\; t_2 \;\rightarrow\; t_3 \quad = \quad \text{BoSY 2024-25} \;\rightarrow\; \text{EoSY 2024-25} \;\rightarrow\; \text{BoSY 2025-26}
+```
 
-For each consecutive pair $(t_i, t_{i+1})$, a **segment delta** is the change in ordinal mean:
+For each consecutive pair in the chain, a **segment delta** is the change in ordinal mean:
 
-$$\Delta_i = \bar{x}_{t_{i+1}} - \bar{x}_{t_i}$$
+```math
+\Delta_i = \bar{x}_{t_{i+1}} - \bar{x}_{t_i}
+```
 
 The **composite progress score** is the sum of all valid segment deltas, representing cumulative progress across the full chain:
 
-$$\Delta_{\text{composite}} = \sum_{i} \Delta_i$$
+```math
+\Delta_{\text{composite}} = \sum_{i} \Delta_i
+```
 
 Segment deltas are also computed for SD and skewness, tracking how distributional shape changes over time.
 
@@ -173,42 +187,48 @@ Schools passing strict validation are ranked for intervention targeting using a 
 
 **Pillar 1 — Need.** A weighted sum of standardized (z-scored) ordinal moment components:
 
-$$\text{Need}_s = \sum_{j} \alpha_j \cdot z(c_{s,j})$$
+```math
+\text{Need}_s = \sum_{j} \alpha_j \cdot z(c_{s,j})
+```
 
-where $c_{s,j}$ are six components and $\alpha_j$ are their weights:
+where *c* are six need components and *&alpha;* are their weights:
 
-| Component $c_{s,j}$ | Weight $\alpha_j$ | Direction | Interpretation |
-|---------------------|-------------------|-----------|----------------|
-| $5 - \bar{x}_{\text{end}}$ | 2.0 | Lower mean = higher need | Current proficiency level |
-| $-\Delta_{\text{mean}}$ | 2.0 | Declining trajectory = higher need | Direction of change |
-| $\sigma_{\text{end}}$ | 1.0 | Higher spread = higher need | Within-school inequality |
-| $\gamma_{\text{end}}$ | 1.0 | Positive skew = higher need | Distribution shape |
-| $\Delta_{\sigma}$ | 0.5 | Increasing spread = higher need | Change in inequality |
-| $\Delta_{\gamma}$ | 0.5 | Worsening skew = higher need | Change in distribution shape |
+| Component | Weight | Direction | Interpretation |
+|-----------|--------|-----------|----------------|
+| 5 &minus; mean | 2.0 | Lower mean = higher need | Current proficiency level |
+| &minus;delta mean | 2.0 | Declining trajectory = higher need | Direction of change |
+| SD (endpoint) | 1.0 | Higher spread = higher need | Within-school inequality |
+| Skewness (endpoint) | 1.0 | Positive skew = higher need | Distribution shape |
+| delta SD | 0.5 | Increasing spread = higher need | Change in inequality |
+| delta skewness | 0.5 | Worsening skew = higher need | Change in distribution shape |
 
 **Pillar 2 — Impact.** The total number of assessed learners at the segment endpoint. Schools with more students represent a larger potential impact per intervention.
 
 **Pillar 3 — Capacity Gap.** The inverse of the LGU's Special Education Fund (SEF) per school:
 
-$$\text{SEF per school} = \frac{\text{LGU Special Education Fund}}{\text{Number of schools in LGU}}$$
+```math
+\text{SEF per school} = \frac{\text{LGU Special Education Fund}}{\text{Number of schools in LGU}}
+```
 
 The SEF is a component of Real Property Tax revenue earmarked for education. Lower SEF per school indicates the LGU has fewer resources available per school, representing a greater capacity gap.
 
 **Composite.** Each pillar is converted to a percentile rank, then the composite is their product:
 
-$$\text{Priority}_s = R_{\%}(\text{Need}_s) \;\times\; R_{\%}(\text{Impact}_s) \;\times\; R_{\%}(\text{CapacityGap}_s)$$
+```math
+\text{Priority}_s = R_{\%}(\text{Need}_s) \;\times\; R_{\%}(\text{Impact}_s) \;\times\; R_{\%}(\text{CapacityGap}_s)
+```
 
-Percentile ranks map each pillar to a uniform $[0, 1]$ distribution regardless of its raw distribution shape. This is critical because assessed counts (skewness $\approx$ 5) and SEF per school (skewness $\approx$ 20) are heavily right-skewed — without this transformation, a handful of outlier schools would dominate the composite. The multiplicative form ensures a school must score high on **all three** dimensions to rank at the top.
+Percentile ranks map each pillar to a uniform [0, 1] distribution regardless of its raw distribution shape. This is critical because assessed counts (skewness &approx; 5) and SEF per school (skewness &approx; 20) are heavily right-skewed — without this transformation, a handful of outlier schools would dominate the composite. The multiplicative form ensures a school must score high on **all three** dimensions to rank at the top.
 
 Reference: [`documentation/priority_ranking.md`](documentation/priority_ranking.md)
 
 ### 4.7 Sensitivity Analysis
 
-The Need pillar weights $\alpha_j$ are chosen by domain judgment, not estimated from data. To assess how much the final rankings depend on these choices, two analyses are conducted:
+The Need pillar weights *&alpha;* are chosen by domain judgment, not estimated from data. To assess how much the final rankings depend on these choices, two analyses are conducted:
 
-**Scenario comparison.** Five interpretable weight profiles — default, level-focused, delta-focused, mean-only, and equal — are compared using Kendall $\tau$ rank correlation (across all ranked schools) and Jaccard overlap (of the top-$N$ lists).
+**Scenario comparison.** Five interpretable weight profiles — default, level-focused, delta-focused, mean-only, and equal — are compared using Kendall &tau; rank correlation (across all ranked schools) and Jaccard overlap (of the top-*N* lists).
 
-**Per-school robustness.** 500 random weight profiles are drawn from a Dirichlet distribution ($\alpha = 2.0$). For each school, the analysis reports the median priority percentile, interquartile range (IQR) of priority percentile, and the fraction of draws in which the school appears in the top-100. Schools with `frac_top_100 = 100%` are robust intervention targets whose ranking does not depend on the weight specification.
+**Per-school robustness.** 500 random weight profiles are drawn from a Dirichlet distribution (&alpha; = 2.0). For each school, the analysis reports the median priority percentile, interquartile range (IQR) of priority percentile, and the fraction of draws in which the school appears in the top-100. Schools with `frac_top_100 = 100%` are robust intervention targets whose ranking does not depend on the weight specification.
 
 Reference: [`documentation/sensitivity_analysis.md`](documentation/sensitivity_analysis.md)
 
@@ -253,7 +273,7 @@ Capacity gap statistics (SEF per school): national median = PHP 142,267; mean = 
 
 **Scenario comparison** (Segment 1):
 
-| Pair | Kendall $\tau$ | Top-100 Jaccard |
+| Pair | Kendall &tau; | Top-100 Jaccard |
 |------|--------------|-----------------|
 | Default vs Mean-only | 0.917 | 88.7% |
 | Default vs Equal | 0.935 | 83.5% |
@@ -268,7 +288,7 @@ Capacity gap statistics (SEF per school): national median = PHP 142,267; mean = 
 | Moderate | 0.05 &le; IQR < 0.15 | 6,517 | 37% |
 | Volatile | IQR &ge; 0.15 | 616 | 3% |
 
-The overall rank ordering is robust (Kendall $\tau$ > 0.82 across all scenario pairs). The main axis of sensitivity is the relative emphasis on current proficiency levels versus trajectory — not the inclusion of SD or skewness.  Schools appearing in the top-100 across 100% of random weight draws are the strongest intervention candidates.
+The overall rank ordering is robust (Kendall &tau; > 0.82 across all scenario pairs). The main axis of sensitivity is the relative emphasis on current proficiency levels versus trajectory — not the inclusion of SD or skewness.  Schools appearing in the top-100 across 100% of random weight draws are the strongest intervention candidates.
 
 ## 6. Repository Structure
 
