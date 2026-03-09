@@ -72,6 +72,7 @@ def _prepare_base(
     progress_df, segment_idx, time_chain,
     crosswalk_df, matched_lgu_df,
     revenue_col="rpt_special_education_fund",
+    enrollment_df=None,
 ):
     """
     Extract all weight-independent work from compute_priority_ranking.
@@ -120,7 +121,7 @@ def _prepare_base(
     assessed = get_total_assessed(sy_end, period_end)
     df["assessed_count"] = assessed.reindex(df.index)
 
-    # Capacity Gap: LGU SEF per school
+    # Capacity Gap: LGU SEF per capita
     xw = crosswalk_df.copy()
     if "School ID" in xw.columns:
         xw = xw.set_index("School ID")
@@ -133,12 +134,21 @@ def _prepare_base(
     df["lgu_name"] = df["psgc_muni_code"].map(code_to_name)
     df["lgu_sef"] = df["psgc_muni_code"].map(code_to_sef)
 
-    lgu_school_count = xw["psgc_muni_code"].dropna().value_counts()
-    df["lgu_school_count"] = df["psgc_muni_code"].map(lgu_school_count)
-    df["sef_per_school"] = df["lgu_sef"] / df["lgu_school_count"]
+    if enrollment_df is not None:
+        enr = enrollment_df[["school_id", "total_enrolled"]].copy()
+        enr = enr.merge(
+            xw[["psgc_muni_code"]].reset_index(),
+            left_on="school_id", right_on="School ID", how="inner",
+        )
+        lgu_enrolled = enr.groupby("psgc_muni_code")["total_enrolled"].sum()
+        df["lgu_denom"] = df["psgc_muni_code"].map(lgu_enrolled)
+    else:
+        lgu_school_count = xw["psgc_muni_code"].dropna().value_counts()
+        df["lgu_denom"] = df["psgc_muni_code"].map(lgu_school_count)
+    df["sef_per_capita"] = df["lgu_sef"] / df["lgu_denom"]
 
     # Drop missing
-    required = ["mean_end", "delta_mean", "assessed_count", "sef_per_school"]
+    required = ["mean_end", "delta_mean", "assessed_count", "sef_per_capita"]
     n_before_drop = len(df)
     df = df.dropna(subset=required)
 
@@ -157,12 +167,12 @@ def _prepare_base(
 
     # Weight-independent pillar scores and percentiles
     impact_score = df["assessed_count"]
-    capacity_gap_score = _z_score(-df["sef_per_school"])
+    capacity_gap_score = _z_score(-df["sef_per_capita"])
     impact_pctile = impact_score.rank(pct=True)
     capacity_gap_pctile = capacity_gap_score.rank(pct=True)
 
     # Drop internal columns
-    df = df.drop(columns=["psgc_muni_code", "lgu_school_count"])
+    df = df.drop(columns=["psgc_muni_code", "lgu_denom"])
 
     summary = {
         "segment": f"seg{seg_n}_{label}",
@@ -233,6 +243,7 @@ def run_scenario_comparison(
     revenue_col="rpt_special_education_fund",
     scenarios=None,
     top_ns=None,
+    enrollment_df=None,
 ):
     """
     Compare priority rankings across predefined weight scenarios.
@@ -260,6 +271,7 @@ def run_scenario_comparison(
     base = _prepare_base(
         progress_df, segment_idx, time_chain,
         crosswalk_df, matched_lgu_df, revenue_col,
+        enrollment_df=enrollment_df,
     )
 
     # Rank under each scenario
@@ -337,6 +349,7 @@ def run_robustness_analysis(
     top_n=100,
     alpha=2.0,
     seed=42,
+    enrollment_df=None,
 ):
     """
     Monte Carlo robustness analysis of priority rankings.
@@ -363,6 +376,7 @@ def run_robustness_analysis(
     base = _prepare_base(
         progress_df, segment_idx, time_chain,
         crosswalk_df, matched_lgu_df, revenue_col,
+        enrollment_df=enrollment_df,
     )
 
     profiles = _draw_dirichlet_weights(n_draws, alpha=alpha, seed=seed)

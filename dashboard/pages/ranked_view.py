@@ -192,6 +192,7 @@ for sid in common_ids:
         "School ID": sid,
         "delta_overall": to_data.at[sid, "ordinal_overall"] - from_data.at[sid, "ordinal_overall"],
         "total_assessed": avg_assessed,
+        "pct_gl": to_data.at[sid, "pct_gl"] if "pct_gl" in to_data.columns else np.nan,
     }
     for gl, col in GRADE_LANG_ORDINAL_COLS.items():
         from_val = from_data.at[sid, col]
@@ -222,10 +223,16 @@ if priority_df is not None and sort_mode == "Priority":
         (priority_df["tp_from"] == tp_from) & (priority_df["tp_to"] == tp_to)
     ].copy()
     if len(seg_priority) > 0:
+        priority_cols = ["School ID", "need_pctile", "impact_pctile",
+                         "capacity_gap_pctile", "priority_score", "priority_pctile",
+                         "lgu_name"]
+        # Handle column rename (sef_per_school → sef_per_capita)
+        for sef_col in ["sef_per_capita", "sef_per_school"]:
+            if sef_col in seg_priority.columns:
+                priority_cols.append(sef_col)
+                break
         delta_df = delta_df.merge(
-            seg_priority[["School ID", "need_pctile", "impact_pctile",
-                          "capacity_gap_pctile", "priority_score", "priority_pctile",
-                          "lgu_name", "sef_per_school"]],
+            seg_priority[priority_cols],
             on="School ID",
             how="left",
         )
@@ -446,6 +453,7 @@ school_labels = [
 
 deltas = ranked["delta_overall"].tolist()
 assessed = ranked["total_assessed"].tolist()
+gl_pcts = ranked["pct_gl"].tolist() if "pct_gl" in ranked.columns else [np.nan] * n_display
 bar_colors = ["#228B22" if d > 0 else "#DC143C" for d in deltas]
 
 # Grade-lang delta matrix
@@ -457,8 +465,8 @@ all_gl_vals = [v for row in z_values for v in row if pd.notna(v)]
 max_abs = max(abs(v) for v in all_gl_vals) if all_gl_vals else 1
 
 fig = make_subplots(
-    rows=1, cols=3,
-    column_widths=[0.25, 0.15, 0.60],
+    rows=1, cols=4,
+    column_widths=[0.22, 0.13, 0.13, 0.52],
     horizontal_spacing=0.04,
 )
 
@@ -493,7 +501,23 @@ fig.add_trace(go.Bar(
     cliponaxis=False,
 ), row=1, col=2)
 
-# Col 3: Heatmap
+# Col 3: GL% bars
+valid_gl = [v for v in gl_pcts if pd.notna(v)]
+max_gl = max(valid_gl) if valid_gl else 100
+fig.add_trace(go.Bar(
+    y=school_labels,
+    x=gl_pcts,
+    orientation="h",
+    marker_color="#9B59B6",
+    text=[f"{v:.0f}%" if pd.notna(v) else "" for v in gl_pcts],
+    textposition="outside",
+    textfont=dict(size=10),
+    showlegend=False,
+    hovertemplate="%{y}<br>At Grade Level: %{x:.1f}%<extra></extra>",
+    cliponaxis=False,
+), row=1, col=3)
+
+# Col 4: Heatmap
 fig.add_trace(go.Heatmap(
     z=z_values,
     x=GRADE_LANG_ORDER,
@@ -510,7 +534,7 @@ fig.add_trace(go.Heatmap(
     zmax=max_abs,
     hovertemplate="<b>%{y}</b><br>%{x}: %{z:+.2f}<extra></extra>",
     showscale=False,
-), row=1, col=3)
+), row=1, col=4)
 
 # Heatmap cell annotations
 for i, row in ranked.iterrows():
@@ -524,7 +548,7 @@ for i, row in ranked.iterrows():
                 text=f"{val:+.1f}",
                 showarrow=False,
                 font=dict(size=9, color=text_color),
-                xref="x3", yref="y3",
+                xref="x4", yref="y4",
             )
 
 # Layout
@@ -545,8 +569,13 @@ fig.add_annotation(
     showarrow=False, font=dict(size=13),
 )
 fig.add_annotation(
-    text="<b>Shift by Grade / Language</b>",
+    text="<b>% at Grade Level</b>",
     xref="x3 domain", yref="paper", x=0.5, y=1.06,
+    showarrow=False, font=dict(size=13),
+)
+fig.add_annotation(
+    text="<b>Shift by Grade / Language</b>",
+    xref="x4 domain", yref="paper", x=0.5, y=1.06,
     showarrow=False, font=dict(size=13),
 )
 
@@ -569,13 +598,22 @@ fig.update_yaxes(
     row=1, col=2,
 )
 
-# Col 3 axes (heatmap)
-fig.update_xaxes(side="bottom", tickfont=dict(size=10), row=1, col=3)
+# Col 3 axes (GL%)
+fig.update_xaxes(range=[0, max_gl * 1.4], showticklabels=False, row=1, col=3)
 fig.update_yaxes(
     categoryorder="array",
     categoryarray=list(reversed(school_labels)),
     showticklabels=False,
     row=1, col=3,
+)
+
+# Col 4 axes (heatmap)
+fig.update_xaxes(side="bottom", tickfont=dict(size=10), row=1, col=4)
+fig.update_yaxes(
+    categoryorder="array",
+    categoryarray=list(reversed(school_labels)),
+    showticklabels=False,
+    row=1, col=4,
 )
 
 st.plotly_chart(fig, use_container_width=True)
@@ -587,11 +625,15 @@ with st.expander("How to read this chart"):
     The change in the school's overall ordinal score from {tp_from} to {tp_to}.
     Green = improvement, red = decline.
 
-    **Assessed (middle):**
+    **Assessed:**
     Average number of learners assessed across the two timepoints.
     Larger bars = more learners, giving the delta more statistical weight.
 
-    **Shift by Grade / Language (right):**
+    **% at Grade Level:**
+    Average percentage of learners at Grade Level proficiency across all grade-language groups
+    at the later timepoint. Higher = better overall reading outcomes.
+
+    **Shift by Grade / Language:**
     Each cell shows the ordinal score delta for a specific grade-language group.
     - **Green** = that group improved (learners shifted to higher proficiency levels)
     - **Red** = that group declined
@@ -603,7 +645,7 @@ with st.expander("How to read this chart"):
     **Ranking modes:**
     - **Delta**: ranks purely by score change regardless of school size. Small schools with few learners can appear at the top with extreme deltas that may not be statistically reliable.
     - **Weighted**: ranks by *delta × log(assessed learners)*. Gently dampens small-school noise — after a few hundred students, the size factor barely matters.
-    - **Priority**: three-pillar composite for intervention targeting. Combines **Need** (ordinal mean, SD, skewness, and their deltas), **Impact** (assessed learner count), and **Capacity Gap** (inverse LGU Special Education Fund per school). Each pillar is converted to a percentile rank, and the composite is their product — a school must score high on all three to rank at the top. The pillar percentiles are shown below each school name.
+    - **Priority**: three-pillar composite for intervention targeting. Combines **Need** (ordinal mean, SD, skewness, and their deltas), **Impact** (assessed learner count), and **Capacity Gap** (inverse LGU Special Education Fund per enrolled learner). Each pillar is converted to a percentile rank, and the composite is their product — a school must score high on all three to rank at the top. The pillar percentiles are shown below each school name.
     """)
 
 # Summary stats

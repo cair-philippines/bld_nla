@@ -230,8 +230,9 @@ def build_ordinal(df_all, percentages, validation):
         })
         total_assessed = all_raw.sum(axis=1)
 
-        # Ordinal score per grade-language group
+        # Ordinal score and GL% per grade-language group
         group_scores = {}
+        group_gl_pcts = {}
         for gi, (grade, lang) in enumerate(GRADE_LANGUAGE_GROUPS):
             cols = _get_group_columns(grade, lang)
             gl_label = GRADE_LANG_LABELS[gi]
@@ -243,6 +244,11 @@ def build_ordinal(df_all, percentages, validation):
             ) / 100
             score[~has_data] = np.nan
             group_scores[gl_label] = score
+
+            # GL% is the last column (Grade Level) in each group
+            gl_pct = group_data[cols[-1]].copy()
+            gl_pct[~has_data] = np.nan
+            group_gl_pcts[gl_label] = gl_pct
 
         # Grade-level aggregations
         ordinal_G1 = group_scores["G1"]
@@ -257,6 +263,11 @@ def build_ordinal(df_all, percentages, validation):
             list(group_scores.values()), axis=1
         ).mean(axis=1)
 
+        # Average GL% across grade-language groups
+        pct_gl_overall = pd.concat(
+            list(group_gl_pcts.values()), axis=1
+        ).mean(axis=1)
+
         for sid in pct_df.index:
             rec = {
                 "School ID": sid,
@@ -268,6 +279,7 @@ def build_ordinal(df_all, percentages, validation):
                 "ordinal_G1": ordinal_G1.get(sid, np.nan),
                 "ordinal_G2": ordinal_G2.get(sid, np.nan),
                 "ordinal_G3": ordinal_G3.get(sid, np.nan),
+                "pct_gl": pct_gl_overall.get(sid, np.nan),
                 "valid": val_df.at[sid, "valid"] if sid in val_df.index else False,
             }
             for gl_label, score_series in group_scores.items():
@@ -293,6 +305,7 @@ def build_ordinal(df_all, percentages, validation):
             "timepoint_label": label,
             "total_assessed": tp_data["total_assessed"].sum(),
             "ordinal_overall": tp_data["ordinal_overall"].mean(),
+            "pct_gl": tp_data["pct_gl"].mean(),
             "ordinal_G1": tp_data["ordinal_G1"].mean(),
             "ordinal_G2": tp_data["ordinal_G2"].mean(),
             "ordinal_G3": tp_data["ordinal_G3"].mean(),
@@ -315,6 +328,7 @@ def build_ordinal(df_all, percentages, validation):
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 PSGC_PATH = PROJECT_ROOT / "data/raw/SY 2024-2025 School Level Database WITH PSGC.xlsx"
 BLGF_PATH = PROJECT_ROOT / "data/raw/By-LGU-SRE-2024.xlsx"
+ENROLLMENT_PATH = PROJECT_ROOT / "data/raw/public_project_bukas_enrollment_2024-25.csv"
 
 
 def build_priority(df_all):
@@ -339,6 +353,11 @@ def build_priority(df_all):
     lgu_revenue_df = load_lgu_revenue(str(BLGF_PATH))
     matched_lgu_df, _, _ = match_lgu_revenue(crosswalk_df, lgu_revenue_df)
 
+    # Enrollment for per-capita SEF
+    enroll = pd.read_csv(str(ENROLLMENT_PATH))
+    grade_cols = [c for c in enroll.columns if c.endswith("_male") or c.endswith("_female")]
+    enroll["total_enrolled"] = enroll[grade_cols].sum(axis=1)
+
     all_segments = []
     for seg_idx in range(len(TIME_CHAIN) - 1):
         t_from = TIME_CHAIN[seg_idx]
@@ -349,6 +368,7 @@ def build_priority(df_all):
         ranking_df, summary = compute_priority_ranking(
             progress_df, seg_idx, TIME_CHAIN,
             crosswalk_df, matched_lgu_df,
+            enrollment_df=enroll,
         )
 
         seg = pd.DataFrame({
@@ -361,7 +381,7 @@ def build_priority(df_all):
             "priority_score": ranking_df["priority_score"].values,
             "priority_pctile": ranking_df["priority_pctile"].values,
             "lgu_name": ranking_df["lgu_name"].values,
-            "sef_per_school": ranking_df["sef_per_school"].values,
+            "sef_per_capita": ranking_df["sef_per_capita"].values,
         })
         all_segments.append(seg)
 

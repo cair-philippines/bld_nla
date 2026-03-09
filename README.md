@@ -204,13 +204,13 @@ where *c* are six need components and *&alpha;* are their weights:
 
 **Pillar 2 — Impact.** The total number of assessed learners at the segment endpoint. Schools with more students represent a larger potential impact per intervention.
 
-**Pillar 3 — Capacity Gap.** The inverse of the LGU's Special Education Fund (SEF) per school:
+**Pillar 3 — Capacity Gap.** The inverse of the LGU's Special Education Fund (SEF) per enrolled learner:
 
 ```math
-\text{SEF per school} = \frac{\text{LGU Special Education Fund}}{\text{Number of schools in LGU}}
+\text{SEF per capita} = \frac{\text{LGU Special Education Fund}}{\text{Total enrolled learners in LGU}}
 ```
 
-The SEF is a component of Real Property Tax revenue earmarked for education. Lower SEF per school indicates the LGU has fewer resources available per school, representing a greater capacity gap.
+The SEF is a component of Real Property Tax revenue earmarked for education. Lower SEF per capita indicates the LGU has fewer resources available per student, representing a greater capacity gap. Enrollment counts are sourced from the SY 2024-25 public enrollment dataset, aggregated to the LGU level via the school-PSGC crosswalk.
 
 **Composite.** Each pillar is converted to a percentile rank, then the composite is their product:
 
@@ -218,7 +218,7 @@ The SEF is a component of Real Property Tax revenue earmarked for education. Low
 \text{Priority}_s = R_{\%}(\text{Need}_s) \;\times\; R_{\%}(\text{Impact}_s) \;\times\; R_{\%}(\text{CapacityGap}_s)
 ```
 
-Percentile ranks map each pillar to a uniform [0, 1] distribution regardless of its raw distribution shape. This is critical because assessed counts (skewness &approx; 5) and SEF per school (skewness &approx; 20) are heavily right-skewed — without this transformation, a handful of outlier schools would dominate the composite. The multiplicative form ensures a school must score high on **all three** dimensions to rank at the top.
+Percentile ranks map each pillar to a uniform [0, 1] distribution regardless of its raw distribution shape. This is critical because assessed counts (skewness &approx; 5) and SEF per capita are heavily right-skewed — without this transformation, a handful of outlier schools would dominate the composite. The multiplicative form ensures a school must score high on **all three** dimensions to rank at the top.
 
 Reference: [`documentation/priority_ranking.md`](documentation/priority_ranking.md)
 
@@ -267,7 +267,7 @@ The within-year gain indicates that schools moved learners upward by nearly a fu
 | BoSY &rarr; EoSY 2024-25 | 17,925 | 17,836 | 89 |
 | EoSY 2024-25 &rarr; BoSY 2025-26 | 16,831 | 16,749 | 82 |
 
-Capacity gap statistics (SEF per school): national median = PHP 142,267; mean = PHP 618,732.
+Capacity gap statistics (SEF per capita): national median = PHP 355; mean = PHP 954.
 
 ### 5.4 Sensitivity Analysis
 

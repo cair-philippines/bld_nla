@@ -25,15 +25,15 @@ Each component is standardized to z-scores before weighting. The weighted sum pr
 
 Raw count of assessed learners at the segment endpoint. Prioritizes schools where interventions affect the most students.
 
-### Pillar 3 — Capacity Gap (Inverse SEF per School)
+### Pillar 3 — Capacity Gap (Inverse SEF per Capita)
 
 Measures how resource-constrained the school's LGU is, using the **Special Education Fund (SEF)** from the DOF BLGF Statement of Receipts and Expenditures (2024).
 
-**Metric**: LGU SEF ÷ number of schools in the LGU
+**Metric**: LGU SEF ÷ total enrolled learners in the LGU
 
-The SEF is a component of Real Property Tax revenue earmarked for education. Per-school SEF provides a proxy for how thinly the LGU's education-earmarked revenue is spread across its schools. Schools in LGUs with lower SEF per school have a larger capacity gap.
+The SEF is a component of Real Property Tax revenue earmarked for education. Per-capita SEF provides a proxy for how thinly the LGU's education-earmarked revenue is spread across its student population. Enrollment counts are sourced from the SY 2024-25 public enrollment dataset (`public_project_bukas_enrollment_2024-25.csv`), aggregated to the LGU level via the school-PSGC crosswalk.
 
-The capacity gap score is the z-score of the negated SEF per school (lower SEF/school → higher capacity gap score).
+Schools in LGUs with lower SEF per capita have a larger capacity gap. The capacity gap score is the z-score of the negated SEF per capita (lower SEF/capita → higher capacity gap score).
 
 ## Composite Score
 
@@ -45,7 +45,7 @@ priority_score = need_pctile × impact_pctile × capacity_gap_pctile
 
 ### Why percentile ranks (not min-max scaling)
 
-Both assessed counts and SEF/school have extreme right-skewness. With min-max scaling, a handful of outlier schools dominate one pillar and the composite becomes effectively single-pillar. Percentile ranks map any distribution to a uniform [0, 1] range, ensuring each pillar contributes equally regardless of its raw distribution shape.
+Both assessed counts and SEF/capita have extreme right-skewness. With min-max scaling, a handful of outlier schools dominate one pillar and the composite becomes effectively single-pillar. Percentile ranks map any distribution to a uniform [0, 1] range, ensuring each pillar contributes equally regardless of its raw distribution shape.
 
 ## Eligibility
 
@@ -55,7 +55,7 @@ Only schools passing `valid_strict` at the segment's endpoint are eligible for r
 - At least 4 of 6 grade-language groups reporting
 - At least 20 assessed learners in every reporting group
 
-Schools are further dropped if they are missing any of: ordinal mean, delta mean, assessed count, or SEF per school (typically due to missing LGU crosswalk data).
+Schools are further dropped if they are missing any of: ordinal mean, delta mean, assessed count, or SEF per capita (typically due to missing LGU crosswalk data).
 
 ## Default Need Weights
 
@@ -90,10 +90,10 @@ Each row represents one ranked school. Columns:
 | `assessed_count` | Total assessed learners at endpoint |
 | `lgu_name` | Matched LGU name |
 | `lgu_sef` | LGU Special Education Fund (PHP) |
-| `sef_per_school` | SEF ÷ number of schools in LGU |
+| `sef_per_capita` | SEF ÷ total enrolled learners in LGU |
 | `need_score` | Pillar 1 weighted z-score |
 | `impact_score` | Pillar 2 raw assessed count |
-| `capacity_gap_score` | Pillar 3 z-score of negated SEF/school |
+| `capacity_gap_score` | Pillar 3 z-score of negated SEF/capita |
 | `need_pctile` | Percentile rank of need score |
 | `impact_pctile` | Percentile rank of impact score |
 | `capacity_gap_pctile` | Percentile rank of capacity gap score |

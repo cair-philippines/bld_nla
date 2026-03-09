@@ -213,18 +213,41 @@ st.markdown(
     f"**{school_meta['Division']}** · *{school_meta['Region']}*"
 )
 
-# Total assessed per timepoint
+# Headline metrics per timepoint
 available_tps = [
     tp for tp in TIMEPOINT_ORDER
     if tp in school_ordinal["timepoint_label"].values
 ]
+
+# National GL% for comparison
+nat_ordinal = ordinal[ordinal["School ID"] == -1]
 
 cols = st.columns(len(available_tps))
 for i, tp in enumerate(available_tps):
     tp_row = school_ordinal[school_ordinal["timepoint_label"] == tp].iloc[0]
     total = tp_row["total_assessed"]
     total_display = f"{int(total):,}" if pd.notna(total) else "\u2014"
-    cols[i].metric(label=tp, value=total_display, help="Total assessed learners")
+
+    gl_pct = tp_row.get("pct_gl", np.nan)
+    nat_row = nat_ordinal[nat_ordinal["timepoint_label"] == tp]
+    nat_gl = nat_row.iloc[0].get("pct_gl", np.nan) if not nat_row.empty else np.nan
+
+    with cols[i]:
+        st.metric(label=tp, value=total_display, help="Total assessed learners")
+        if pd.notna(gl_pct):
+            delta_vs_nat = None
+            help_gl = f"{gl_pct:.1f}% of learners at Grade Level"
+            if pd.notna(nat_gl):
+                delta_vs_nat = gl_pct - nat_gl
+                direction = "above" if delta_vs_nat > 0 else "below"
+                help_gl += f" (national: {nat_gl:.1f}%)"
+            st.metric(
+                label="At Grade Level",
+                value=f"{gl_pct:.1f}%",
+                delta=f"{delta_vs_nat:+.1f}pp vs national" if delta_vs_nat is not None else None,
+                delta_color="normal",
+                help=help_gl,
+            )
 
 st.markdown("---")
 

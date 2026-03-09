@@ -8,12 +8,12 @@ list for a single assessment segment:
         (both endpoint levels and segment deltas)
     Pillar 2 — Impact: number of assessed learners
     Pillar 3 — Capacity Gap: inverse of LGU Special Education Fund
-        (SEF) per school
+        (SEF) per enrolled learner in the LGU
 
 The composite priority score is the product of percentile ranks across
 all three pillars, so a school must score high on all three dimensions
 to rank at the top. Percentile ranks neutralize distribution skewness
-(assessed counts and SEF/school are both heavily right-skewed).
+(assessed counts and SEF/capita are both heavily right-skewed).
 """
 
 import numpy as np
@@ -61,6 +61,7 @@ def compute_priority_ranking(
     matched_lgu_df,
     revenue_col="rpt_special_education_fund",
     need_weights=None,
+    enrollment_df=None,
 ):
     """
     Compute a three-pillar priority ranking for intervention targeting.
@@ -90,6 +91,11 @@ def compute_priority_ranking(
         Weights for need components. Keys: ``level_mean``,
         ``delta_mean``, ``level_sd``, ``level_skew``, ``delta_sd``,
         ``delta_skew``. Defaults to ``DEFAULT_NEED_WEIGHTS``.
+    enrollment_df : pandas.DataFrame, optional
+        School-level enrollment with ``school_id`` and
+        ``total_enrolled`` columns. Used to compute SEF per capita
+        (SEF ÷ total enrolled in LGU). If None, falls back to
+        SEF per school count.
 
     Returns
     -------
@@ -152,7 +158,7 @@ def compute_priority_ranking(
     assessed = get_total_assessed(sy_end, period_end)
     df["assessed_count"] = assessed.reindex(df.index)
 
-    # ---- Capacity Gap input: LGU SEF per school ----
+    # ---- Capacity Gap input: LGU SEF per capita ----
     # Prepare crosswalk
     xw = crosswalk_df.copy()
     if "School ID" in xw.columns:
@@ -169,18 +175,25 @@ def compute_priority_ranking(
     df["lgu_name"] = df["psgc_muni_code"].map(code_to_name)
     df["lgu_sef"] = df["psgc_muni_code"].map(code_to_sef)
 
-    # Per-school: count of schools per LGU as denominator
-    lgu_school_count = (
-        xw["psgc_muni_code"]
-        .dropna()
-        .value_counts()
-    )
-    df["lgu_school_count"] = df["psgc_muni_code"].map(lgu_school_count)
-    df["sef_per_school"] = df["lgu_sef"] / df["lgu_school_count"]
+    # Per-capita: total enrolled learners per LGU as denominator
+    if enrollment_df is not None:
+        enr = enrollment_df[["school_id", "total_enrolled"]].copy()
+        enr = enr.merge(
+            xw[["psgc_muni_code"]].reset_index(),
+            left_on="school_id", right_on="School ID", how="inner",
+        )
+        lgu_enrolled = enr.groupby("psgc_muni_code")["total_enrolled"].sum()
+        df["lgu_enrolled"] = df["psgc_muni_code"].map(lgu_enrolled)
+        df["sef_per_capita"] = df["lgu_sef"] / df["lgu_enrolled"]
+    else:
+        # Fallback: per-school count
+        lgu_school_count = xw["psgc_muni_code"].dropna().value_counts()
+        df["lgu_enrolled"] = df["psgc_muni_code"].map(lgu_school_count)
+        df["sef_per_capita"] = df["lgu_sef"] / df["lgu_enrolled"]
 
     # ---- Drop schools missing critical data ----
     required = [
-        "mean_end", "delta_mean", "assessed_count", "sef_per_school",
+        "mean_end", "delta_mean", "assessed_count", "sef_per_capita",
     ]
     n_before_drop = len(df)
     df = df.dropna(subset=required)
@@ -206,7 +219,7 @@ def compute_priority_ranking(
     df["impact_score"] = df["assessed_count"]
 
     # ---- Pillar 3: Capacity Gap ----
-    df["capacity_gap_score"] = _z_score(-df["sef_per_school"])
+    df["capacity_gap_score"] = _z_score(-df["sef_per_capita"])
 
     # ---- Percentile ranks ----
     df["need_pctile"] = df["need_score"].rank(pct=True)
@@ -226,7 +239,7 @@ def compute_priority_ranking(
     df = df.sort_values("priority_score", ascending=False)
 
     # ---- Drop internal columns ----
-    df = df.drop(columns=["psgc_muni_code", "lgu_school_count"])
+    df = df.drop(columns=["psgc_muni_code", "lgu_enrolled"])
 
     # ---- Print summary ----
     n_ranked = len(df)
@@ -245,8 +258,8 @@ def compute_priority_ranking(
           f"median={df['assessed_count'].median():.0f}")
     print(f"    Capacity gap:  mean={df['capacity_gap_score'].mean():.2f}, "
           f"std={df['capacity_gap_score'].std():.2f}")
-    print(f"    SEF/school:    mean={df['sef_per_school'].mean():,.0f}, "
-          f"median={df['sef_per_school'].median():,.0f}")
+    print(f"    SEF/capita:    mean={df['sef_per_capita'].mean():,.0f}, "
+          f"median={df['sef_per_capita'].median():,.0f}")
     print()
 
     # Top 10
