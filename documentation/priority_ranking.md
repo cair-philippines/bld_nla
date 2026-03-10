@@ -106,8 +106,8 @@ Saved to `output/`:
 
 | File | Segment | Schools Ranked |
 |------|---------|---------------|
-| `priority_ranking.Learning_2024-25.csv` | BoSY → EoSY 2024-25 | ~17,800 |
-| `priority_ranking.Retention_2024-25_to_2025-26.csv` | EoSY 2024-25 → BoSY 2025-26 | ~16,700 |
+| `priority_ranking_sef.Learning_2024-25.csv` | BoSY → EoSY 2024-25 | 22,114 |
+| `priority_ranking_sef.Retention_2024-25_to_2025-26.csv` | EoSY 2024-25 → BoSY 2025-26 | 20,766 |
 
 ## Module Reference
 

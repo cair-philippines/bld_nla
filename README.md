@@ -293,7 +293,7 @@ The overall rank ordering is robust (Kendall τ > 0.82 across all scenario pairs
 
 ### 5.5 Validation Against Prior School List
 
-A previously curated list of 131 priority schools (identified using the earlier PCA-based method) was compared against the current pipeline's Learning segment (BoSY → EoSY 2024-25) priority ranking. Of these, 126 unique School IDs were identified (5 duplicates); 53 passed strict validation and appeared in the current ranking, while 73 were excluded due to insufficient data. Among the 53 matched schools, 60% ranked above the 70th priority percentile — confirming that the new methodology is directionally consistent with prior expert judgment. The Need pillar showed the strongest agreement (median 96th percentile), while Impact was lower (median 45th percentile), reflecting that many legacy-selected schools are small.
+A previously curated list of 131 priority schools (identified using the earlier PCA-based method) was compared against the current pipeline's Learning segment (BoSY → EoSY 2024-25) priority ranking. All 131 School IDs are unique (authoritative source: `output/bbi_annex_b_school_ids.txt`). Of these, 66 passed strict validation and appeared in the current ranking, while 65 were excluded due to insufficient data — primarily too few assessed learners for reliable ordinal statistics.
 
 Reference: [`documentation/old_list_comparison.md`](documentation/old_list_comparison.md)
 
