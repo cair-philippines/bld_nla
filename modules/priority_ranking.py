@@ -247,7 +247,7 @@ def compute_priority_ranking(
     print(f"  Strict-valid schools: {n_strict}")
     print(f"  Dropped (missing LGU or count data): {n_before_drop - n_ranked}")
     print(f"  Ranked: {n_ranked}")
-    print(f"  min_group_assessed threshold: 20 (part of valid_strict)")
+    print(f"  min_group_assessed threshold: 15 (part of valid_strict)")
     print(f"  Need weights: {need_weights}")
     print(f"  Revenue column: {revenue_col}")
     print()
@@ -284,7 +284,7 @@ def compute_priority_ranking(
         "ranked": n_ranked,
         "need_weights": need_weights,
         "revenue_column": revenue_col,
-        "min_group_assessed_threshold": 20,
+        "min_group_assessed_threshold": 15,
     }
 
     return df, summary

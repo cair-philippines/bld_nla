@@ -356,14 +356,14 @@ def validate_timepoint(pct_df, raw_counts_df=None):
     else:
         validation["min_group_assessed"] = np.nan
 
-    # valid_strict: all grades + ≥4 groups + ≥20 per group
+    # valid_strict: all grades + ≥4 groups + ≥15 per group
     strict = (
         validation["valid"]
         & validation["has_all_grades"]
         & (validation["groups_available"] >= 4)
     )
     if raw_counts_df is not None:
-        strict = strict & (validation["min_group_assessed"] >= 20)
+        strict = strict & (validation["min_group_assessed"] >= 15)
     validation["valid_strict"] = strict
 
     return validation

@@ -53,7 +53,7 @@ Only schools passing `valid_strict` at the segment's endpoint are eligible for r
 
 - All three grade levels covered (G1 + G2 + G3)
 - At least 4 of 6 grade-language groups reporting
-- At least 20 assessed learners in every reporting group
+- At least 15 assessed learners in every reporting group
 
 Schools are further dropped if they are missing any of: ordinal mean, delta mean, assessed count, or SEF per capita (typically due to missing LGU crosswalk data).
 
