@@ -54,6 +54,7 @@ The central policy questions this analysis addresses:
 |--------|------|---------|
 | DepEd School Level Database with PSGC | `SY 2024-2025 School Level Database WITH PSGC.xlsx` | Maps each School ID to a Philippine Standard Geographic Code (PSGC) municipality/city code |
 | DOF BLGF Statement of Receipts and Expenditures | `By-LGU-SRE-2024.xlsx` | LGU-level revenue and expenditure data, including the Special Education Fund |
+| Public enrollment (Project Bukas) | `public_project_bukas_enrollment_2024-25.csv` | School-level enrollment counts used to compute SEF per enrolled learner at the LGU level |
 
 All input files are located in `data/raw/`.
 
@@ -92,7 +93,7 @@ The ordinal mean is a weighted average of the proficiency distribution, averaged
 \bar{x}_s = \frac{1}{G} \sum_{g=1}^{G} \sum_{k=1}^{5} p_{s,g,k} \cdot w_k
 ```
 
-where *p* is the percentage of learners in school *s*, grade-language group *g*, at proficiency level *k*, and *w* &isin; {1, 2, 3, 4, 5} are the ordinal values from Lower Emergent to Grade Level. The result is a score on the 1-5 scale: a value of 3.30 means the average learner in that school falls between the Developing and Transitioning levels.
+where *p* is the percentage of learners in school *s*, grade-language group *g*, at proficiency level *k*, and *w* ∈ {1, 2, 3, 4, 5} are the ordinal values from Lower Emergent to Grade Level. The result is a score on the 1-5 scale: a value of 3.30 means the average learner in that school falls between the Developing and Transitioning levels.
 
 **Why ordinal scoring over PCA.** An alternative PCA-based scoring method was explored, where weights are derived from the first principal component of the proficiency distribution. PCA weights proved unstable across reference timepoints — Grade Level receives weight 0 under a BoSY reference but weight 100 under an EoSY reference. The ordinal method uses fixed, interpretable weights that require no reference period.
 
@@ -133,7 +134,7 @@ Each school is validated at two tiers. The **basic** tier requires at least one 
 |-----------|-----------|-----------|
 | Grade coverage | All three grade levels (G1, G2, G3) have at least one reporting group | Ensures the school's score reflects the full early-grade span |
 | Group breadth | At least 4 of 6 grade-language groups reporting | Guards against scores driven by a single group |
-| Minimum sample | At least 20 assessed learners in every reporting group | Ensures statistical stability of within-group percentages |
+| Minimum sample | At least 15 assessed learners in every reporting group | Ensures statistical stability of within-group percentages |
 
 A segment delta between two timepoints additionally requires: (1) both endpoints pass basic validation, and (2) the total assessed student count does not change by more than 25% between endpoints.
 
@@ -191,12 +192,12 @@ Schools passing strict validation are ranked for intervention targeting using a 
 \text{Need}_s = \sum_{j} \alpha_j \cdot z(c_{s,j})
 ```
 
-where *c* are six need components and *&alpha;* are their weights:
+where *c* are six need components and *α* are their weights:
 
 | Component | Weight | Direction | Interpretation |
 |-----------|--------|-----------|----------------|
-| 5 &minus; mean | 2.0 | Lower mean = higher need | Current proficiency level |
-| &minus;delta mean | 2.0 | Declining trajectory = higher need | Direction of change |
+| 5 − mean | 2.0 | Lower mean = higher need | Current proficiency level |
+| −delta mean | 2.0 | Declining trajectory = higher need | Direction of change |
 | SD (endpoint) | 1.0 | Higher spread = higher need | Within-school inequality |
 | Skewness (endpoint) | 1.0 | Positive skew = higher need | Distribution shape |
 | delta SD | 0.5 | Increasing spread = higher need | Change in inequality |
@@ -218,17 +219,17 @@ The SEF is a component of Real Property Tax revenue earmarked for education. Low
 \text{Priority}_s = R_{\%}(\text{Need}_s) \;\times\; R_{\%}(\text{Impact}_s) \;\times\; R_{\%}(\text{CapacityGap}_s)
 ```
 
-Percentile ranks map each pillar to a uniform [0, 1] distribution regardless of its raw distribution shape. This is critical because assessed counts (skewness &approx; 5) and SEF per capita are heavily right-skewed — without this transformation, a handful of outlier schools would dominate the composite. The multiplicative form ensures a school must score high on **all three** dimensions to rank at the top.
+Percentile ranks map each pillar to a uniform [0, 1] distribution regardless of its raw distribution shape. This is critical because assessed counts (skewness ≈ 5) and SEF per capita are heavily right-skewed — without this transformation, a handful of outlier schools would dominate the composite. The multiplicative form ensures a school must score high on **all three** dimensions to rank at the top.
 
 Reference: [`documentation/priority_ranking.md`](documentation/priority_ranking.md)
 
 ### 4.7 Sensitivity Analysis
 
-The Need pillar weights *&alpha;* are chosen by domain judgment, not estimated from data. To assess how much the final rankings depend on these choices, two analyses are conducted:
+The Need pillar weights *α* are chosen by domain judgment, not estimated from data. To assess how much the final rankings depend on these choices, two analyses are conducted:
 
-**Scenario comparison.** Five interpretable weight profiles — default, level-focused, delta-focused, mean-only, and equal — are compared using Kendall &tau; rank correlation (across all ranked schools) and Jaccard overlap (of the top-*N* lists).
+**Scenario comparison.** Five interpretable weight profiles — default, level-focused, delta-focused, mean-only, and equal — are compared using Kendall τ rank correlation (across all ranked schools) and Jaccard overlap (of the top-*N* lists).
 
-**Per-school robustness.** 500 random weight profiles are drawn from a Dirichlet distribution (&alpha; = 2.0). For each school, the analysis reports the median priority percentile, interquartile range (IQR) of priority percentile, and the fraction of draws in which the school appears in the top-100. Schools with `frac_top_100 = 100%` are robust intervention targets whose ranking does not depend on the weight specification.
+**Per-school robustness.** 500 random weight profiles are drawn from a Dirichlet distribution (α = 2.0). For each school, the analysis reports the median priority percentile, interquartile range (IQR) of priority percentile, and the fraction of draws in which the school appears in the top-100. Schools with `frac_top_100 = 100%` are robust intervention targets whose ranking does not depend on the weight specification.
 
 Reference: [`documentation/sensitivity_analysis.md`](documentation/sensitivity_analysis.md)
 
@@ -246,8 +247,8 @@ Across 29,854 schools with valid data at all three timepoints:
 
 | Segment | Mean Delta | Direction |
 |---------|-----------|-----------|
-| BoSY 2024-25 &rarr; EoSY 2024-25 | +0.82 | Within-year improvement |
-| EoSY 2024-25 &rarr; BoSY 2025-26 | -1.04 | Cross-year decline |
+| BoSY 2024-25 → EoSY 2024-25 | +0.82 | Within-year improvement |
+| EoSY 2024-25 → BoSY 2025-26 | -1.04 | Cross-year decline |
 | **Composite** | **-0.14** | **Slight net regression** |
 
 The within-year gain indicates that schools moved learners upward by nearly a full proficiency level on average during SY 2024-25. However, the cross-year decline (summer learning loss plus new-cohort effects) more than offset this gain, resulting in a small net regression over the full observation window.
@@ -257,15 +258,15 @@ The within-year gain indicates that schools moved learners upward by nearly a fu
 | Tier | BoSY 2024-25 | EoSY 2024-25 | BoSY 2025-26 |
 |------|-------------|-------------|-------------|
 | Basic (at least 1 group with data) | 35,280 (100%) | 37,042 (>99%) | 38,964 (>99%) |
-| Strict (all grades, &ge;4 groups, &ge;15 per group) | 22,961 (65%) | 24,380 (66%) | 24,303 (62%) |
+| Strict (all grades, ≥4 groups, ≥15 per group) | 22,961 (65%) | 24,380 (66%) | 24,303 (62%) |
 | Full chain, strict (all 3 timepoints) | 19,152 (49%) | | |
 
 ### 5.3 Priority Ranking
 
 | Segment | Strict-Valid | Ranked | Dropped (missing LGU data) |
 |---------|------------|--------|--------------------------|
-| BoSY &rarr; EoSY 2024-25 | 22,206 | 22,114 | 92 |
-| EoSY 2024-25 &rarr; BoSY 2025-26 | 20,855 | 20,766 | 89 |
+| BoSY → EoSY 2024-25 | 22,206 | 22,114 | 92 |
+| EoSY 2024-25 → BoSY 2025-26 | 20,855 | 20,766 | 89 |
 
 Capacity gap statistics (SEF per capita): national median = PHP 355; mean = PHP 954.
 
@@ -273,7 +274,7 @@ Capacity gap statistics (SEF per capita): national median = PHP 355; mean = PHP 
 
 **Scenario comparison** (Segment 1):
 
-| Pair | Kendall &tau; | Top-100 Jaccard |
+| Pair | Kendall τ | Top-100 Jaccard |
 |------|--------------|-----------------|
 | Default vs Mean-only | 0.917 | 88.7% |
 | Default vs Equal | 0.935 | 83.5% |
@@ -285,10 +286,16 @@ Capacity gap statistics (SEF per capita): national median = PHP 355; mean = PHP 
 | Stability Tier | IQR Threshold | Schools | Share |
 |---------------|--------------|---------|-------|
 | Stable | IQR < 0.05 | 10,703 | 60% |
-| Moderate | 0.05 &le; IQR < 0.15 | 6,517 | 37% |
-| Volatile | IQR &ge; 0.15 | 616 | 3% |
+| Moderate | 0.05 ≤ IQR < 0.15 | 6,517 | 37% |
+| Volatile | IQR ≥ 0.15 | 616 | 3% |
 
-The overall rank ordering is robust (Kendall &tau; > 0.82 across all scenario pairs). The main axis of sensitivity is the relative emphasis on current proficiency levels versus trajectory — not the inclusion of SD or skewness.  Schools appearing in the top-100 across 100% of random weight draws are the strongest intervention candidates.
+The overall rank ordering is robust (Kendall τ > 0.82 across all scenario pairs). The main axis of sensitivity is the relative emphasis on current proficiency levels versus trajectory — not the inclusion of SD or skewness.  Schools appearing in the top-100 across 100% of random weight draws are the strongest intervention candidates.
+
+### 5.5 Validation Against Prior School List
+
+A previously curated list of 131 priority schools (identified using the earlier PCA-based method) was compared against the current pipeline's Learning segment (BoSY → EoSY 2024-25) priority ranking. Of these, 126 unique School IDs were identified (5 duplicates); 53 passed strict validation and appeared in the current ranking, while 73 were excluded due to insufficient data. Among the 53 matched schools, 60% ranked above the 70th priority percentile — confirming that the new methodology is directionally consistent with prior expert judgment. The Need pillar showed the strongest agreement (median 96th percentile), while Impact was lower (median 45th percentile), reflecting that many legacy-selected schools are small.
+
+Reference: [`documentation/old_list_comparison.md`](documentation/old_list_comparison.md)
 
 ## 6. Repository Structure
 
@@ -316,7 +323,14 @@ project_crla/
 │   ├── priority_ranking.md            Three-pillar ranking methodology
 │   ├── sensitivity_analysis.md        Weight sensitivity and robustness results
 │   ├── lgu_matching.md                School-to-LGU crosswalk methodology
+│   ├── old_list_comparison.md         131-school legacy list validation
+│   ├── policy_brief_crla_methodology.md  One-page policy brief
 │   └── dashboard_plan.md              Streamlit dashboard specifications
+│
+├── notebooks/                         Stakeholder presentation notebooks
+│   ├── 1.0_methodology_walkthrough.ipynb   Three-pillar methodology explainer
+│   ├── 2.0_portfolio_analysis_131_schools.ipynb  Legacy list re-evaluation
+│   └── 3.0_cycle2_interpretability.ipynb   Cycle 2 interpretability analysis
 │
 ├── dashboard/                         Interactive Streamlit dashboard
 │   ├── app.py                         Application router
@@ -342,7 +356,7 @@ project_crla/
 - Python 3.11+
 - pandas, numpy (data processing)
 - scipy (sensitivity analysis)
-- scikit-learn (PCA scoring, optional)
+- scikit-learn (legacy PCA scoring comparison only)
 - openpyxl (Excel parsing for PSGC and BLGF data)
 
 ### 7.2 Running the Pipeline
