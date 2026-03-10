@@ -1,15 +1,16 @@
 # A Data-Driven Framework for Targeting Literacy Interventions Using DepEd's Existing CRLA Data
 
-**Center for Artificial Intelligence Research (CAIR), De La Salle University**
-**In partnership with the Department of Education**
+**Education Center for AI Research (ECAIR), Department of Education**
 
 ---
 
-## The Problem
+## Background
 
-DepEd administers the Classroom Reading Level Assessment (CRLA) to over 10 million learners in Grades 1–3 across roughly 39,000 public elementary schools every beginning and end of school year. This produces a rich dataset — student counts across five proficiency levels for six grade-language groups per school — but it has historically been underutilized for systematic intervention planning. Earlier analyses relied on a single composite score per school, applied minimal data quality filters, and did not account for school size or local government fiscal capacity when identifying where interventions are most needed.
+The Department of Education administers the Classroom Reading Level Assessment (CRLA) to over 10 million learners in Grades 1–3 across roughly 39,000 public elementary schools. Each school is assessed at the beginning (BoSY) and end (EoSY) of the school year, producing student counts across five ordinal proficiency levels — from Lower Emergent to Grade Level — for six grade-language groups. This amounts to 30 data points per school per assessment window, collected on a fixed national schedule.
 
-The result: priority lists that included schools with unreliable data, ignored distributional inequality within schools, and treated a 50-student school the same as a 2,000-student school.
+This data already exists. It is already structured. And it is already collected at the frequency needed for longitudinal tracking. The opportunity is to extract more from it — not just school-level averages, but the full shape of each school's proficiency distribution and how that shape changes over time.
+
+Beyond the CRLA data itself, two other administrative datasets maintained by government agencies can be joined to enrich the analysis: the DepEd School Level Database with Philippine Standard Geographic Codes (PSGC), which links each school to its municipality or city; and the Department of Finance's Bureau of Local Government Finance (BLGF) Statement of Receipts and Expenditures, which provides LGU-level fiscal data including the Special Education Fund. Together, these three datasets — all routinely produced, none requiring new collection — allow the construction of a school-level priority framework that combines academic need, student population, and local government fiscal capacity.
 
 ## What We Propose
 
@@ -41,4 +42,4 @@ For **monitoring and evaluation**: a built-in before-and-after framework. School
 
 ---
 
-*This framework was developed by the Center for Artificial Intelligence Research at De La Salle University in collaboration with the Department of Education. The full analytical pipeline, documentation, and reproducibility materials are available for review.*
+*This framework was developed by the Education Center for AI Research (ECAIR), Department of Education. The full analytical pipeline, documentation, and reproducibility materials are available for review.*
