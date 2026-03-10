@@ -447,3 +447,7 @@ When new assessment data becomes available:
 1. Place the raw CSV in `data/raw/`.
 2. Add the corresponding `(school_year, period)` entry to `file_map` and `TIME_CHAIN`.
 3. Re-run the pipeline. New segment deltas and priority rankings are computed automatically; existing segments are unchanged.
+
+## 8. AI Disclosure
+
+AI coding assistants (Claude, Anthropic) were used during the development of this project for code review, documentation drafting, and structured prompt generation. All methodological decisions, domain interpretations, and final outputs were made and validated by the ECAIR team. The underlying data, analytical logic, and policy framing reflect human judgment; AI tools served as a productivity aid, not a decision-maker.
