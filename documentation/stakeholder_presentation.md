@@ -2,7 +2,7 @@
 
 ## Overview
 
-Two Jupyter notebooks prepared for the **March 11, 2025** stakeholder meeting. Both are presentation-ready: all code cells are hidden via CSS injection, leaving only narrative markdown and professional visualizations.
+Three Jupyter notebooks prepared for stakeholder meetings. All are presentation-ready: code cells are hidden via CSS injection, leaving only narrative markdown and professional visualizations.
 
 ## Notebooks
 
@@ -33,14 +33,32 @@ Two Jupyter notebooks prepared for the **March 11, 2025** stakeholder meeting. B
 | Section | Content | Charts |
 |---|---|---|
 | A. How Were the 131 Schools Identified? | Context on old PCA method, key differences table | 0 |
-| B. Applying the New Method | Coverage summary (126 unique IDs → 53 in current ranking, 73 excluded). Priority band distribution (horizontal bar). Pillar percentile comparison (grouped bar: Need vs Impact vs Capacity Gap) | 3 |
+| B. Applying the New Method | Coverage summary (131 unique IDs → 66 in current ranking, 65 excluded). Priority band distribution (horizontal bar). Pillar percentile comparison (grouped bar: Need vs Impact vs Capacity Gap) | 3 |
 | C. (unlabeled) | Scatter plot of Need vs Impact percentile for matched schools, colored by priority band | 1 |
 | D. A Closer Look at Individual Schools | Top 10 and bottom 10 schools by priority percentile (horizontal bar pairs). Individual school profile cards (top 5 and bottom 5) showing pillar breakdown | 4 |
 | E. What About the Excluded Schools? | Exclusion reasons breakdown (horizontal bar). Treemap or distribution of excluded schools by region | 2 |
 | F. A System That Improves With Data | Forward-looking message about data quality → ranking quality | 1 |
 | Key Takeaways | Bullet-point summary | 0 |
 
-**Data source**: The original stakeholder list had 131 entries but only 126 unique School IDs (5 duplicates). These are re-evaluated against the **Learning segment (BoSY → EoSY 2024-25)** priority ranking. Result: 63 matched, 63 excluded (after lowering min_group_assessed from 20 to 15). Uses same strict validation and three-pillar composite as the main pipeline.
+**Data source**: The original stakeholder list contains **131 unique School IDs** (authoritative source: `output/bbi_annex_b_school_ids.txt`). These are re-evaluated against the **Learning segment (BoSY → EoSY 2024-25)** priority ranking. Result: 66 matched, 65 excluded. Uses same strict validation and three-pillar composite as the main pipeline.
+
+### 3.0 — Cycle 2 Interpretability
+
+**File**: `notebooks/3.0_cycle2_interpretability.ipynb`
+**Purpose**: Interpretability and explainability notebook for the top 100 2nd cycle priority schools (Retention segment).
+**Structure**: 20 cells (13 code, 7 markdown), **11 charts**, 0 errors.
+
+| Section | Content | Charts |
+|---|---|---|
+| A. Selection Process | Funnel (20,766 → top 100 after excluding 131 1st-cycle schools) + regional distribution bar chart | 2 |
+| B. Profile of Top 100 | Three-pillar boxplots (top 100 vs national) + Need vs Impact scatter (color = Capacity Gap) | 2 |
+| C. Pillar Deep Dive | Need decomposition (mean_end vs delta_mean scatter), Impact histogram, SEF per capita distribution | 3 |
+| D. Individual School Profiles | Top 10 and bottom 10 within top 100 — grouped horizontal bars (Need, Impact, Capacity Gap pctile) | 1 |
+| E. Cycle Comparison | Side-by-side pillar boxplots (1st vs 2nd cycle vs national) + regional overlap bars | 2 |
+| F. Robustness Check | Cutoff sensitivity (80–150 threshold) + pillar Spearman correlation with composite | 1 |
+| Key Takeaways | Bullet-point summary | 0 |
+
+**Data source**: `output/priority_ranking_sef.Retention_2024-25_to_2025-26.csv` (20,766 schools). Top 100 excludes all 131 1st-cycle School IDs. Companion Excel: `output/priority_schools_cycle2_retention.xlsx` (2 sheets: full ranking + top 100).
 
 ## Visual Design
 
@@ -87,3 +105,6 @@ The old-list comparison also produced `data/modified/old_list_vs_current_priorit
 | 2025-03-09 | Complete | Both notebooks built, 13 technical review fixes applied, aesthetic overhaul done, triptych cell (`f2068a2f`) updated with dot-and-whisker + smoothed area curves |
 | 2025-03-09 | Revised | Notebook 2.0: switched from Retention to Learning segment (BoSY → EoSY 2024-25), explained 131→126 deduplication, fixed `seg2_valid`→`seg1_valid`, fixed overlapping labels (Chart 4 band legend, Chart 7 quadrant labels, Chart 8 TOP/BOTTOM labels) |
 | 2025-03-09 | Threshold | Lowered `min_group_assessed` from 20 to 15 across pipeline. Coverage: 22,114 Learning / 20,766 Retention (was 17,836 / 16,749). Portfolio: 63 matched, 63 excluded (was 53/73). Both notebooks + dashboard data + CSVs regenerated. |
+| 2025-03-09 | Cycle 2 | Generated `output/priority_schools_cycle2_retention.xlsx` (20,766 all + top 100 excluding 126 1st-cycle schools). Built Notebook 3.0 (11 charts, 6 sections). |
+| 2026-03-09 | README | Comprehensive README rewrite with full methodology (math notation), reproducibility instructions, repo structure, AI disclosure. Added `documentation/policy_brief_crla_methodology.md` (one-page policy brief). |
+| 2026-03-10 | 131 fix | Corrected school count from 126 → 131 unique IDs (no duplicates existed). Source: `output/bbi_annex_b_school_ids.txt`. Regenerated Excel files, re-executed notebooks 2.0 and 3.0. New counts: 66 matched / 65 excluded (Learning), 57 tagged as 1st cycle (Retention). |
