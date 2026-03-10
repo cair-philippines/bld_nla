@@ -257,15 +257,15 @@ The within-year gain indicates that schools moved learners upward by nearly a fu
 | Tier | BoSY 2024-25 | EoSY 2024-25 | BoSY 2025-26 |
 |------|-------------|-------------|-------------|
 | Basic (at least 1 group with data) | 35,280 (100%) | 37,042 (>99%) | 38,964 (>99%) |
-| Strict (all grades, &ge;4 groups, &ge;20 per group) | 18,598 (53%) | 19,869 (54%) | 19,612 (50%) |
-| Full chain, strict (all 3 timepoints) | 15,345 (39%) | | |
+| Strict (all grades, &ge;4 groups, &ge;15 per group) | 22,961 (65%) | 24,380 (66%) | 24,303 (62%) |
+| Full chain, strict (all 3 timepoints) | 19,152 (49%) | | |
 
 ### 5.3 Priority Ranking
 
 | Segment | Strict-Valid | Ranked | Dropped (missing LGU data) |
 |---------|------------|--------|--------------------------|
-| BoSY &rarr; EoSY 2024-25 | 17,925 | 17,836 | 89 |
-| EoSY 2024-25 &rarr; BoSY 2025-26 | 16,831 | 16,749 | 82 |
+| BoSY &rarr; EoSY 2024-25 | 22,206 | 22,114 | 92 |
+| EoSY 2024-25 &rarr; BoSY 2025-26 | 20,855 | 20,766 | 89 |
 
 Capacity gap statistics (SEF per capita): national median = PHP 355; mean = PHP 954.
 
