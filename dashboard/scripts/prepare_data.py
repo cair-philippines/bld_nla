@@ -32,10 +32,15 @@ from preprocessing import (
 )
 from analysis import (
     ORDINAL_WEIGHTS,
+    ALL_TIMEPOINTS,
+    SCHOOL_YEAR_CHAINS,
     TIME_CHAIN,
+    _build_segment_pairs,
+    _segment_label,
     process_all_timepoints,
     compute_chain_progress,
 )
+from preprocessing import resolve_latest_exports
 from lgu_matching import (
     load_deped_psgc,
     load_lgu_revenue,
@@ -48,7 +53,10 @@ from priority_ranking import compute_priority_ranking
 # Config
 # ---------------------------------------------------------------------------
 
-LOCAL_FILES = {
+# Use dashboard exports as canonical source (resolve_latest_exports finds
+# the most recent file per timepoint from data/raw/dashboard_export/).
+# Falls back to hardcoded paths if no exports are found.
+LOCAL_FILES = resolve_latest_exports() or {
     ("2024-25", "BoSY"): (
         "data/raw/CRLA Results Archive_SY 2024-25 "
         "Assessment Results_Table_BoSY.csv"
@@ -63,11 +71,7 @@ LOCAL_FILES = {
     ),
 }
 
-TIMEPOINT_ORDER = [
-    ("2024-25", "BoSY"),
-    ("2024-25", "EoSY"),
-    ("2025-26", "BoSY"),
-]
+TIMEPOINT_ORDER = ALL_TIMEPOINTS
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "data"
 
@@ -342,7 +346,6 @@ def build_priority(df_all):
         performance=results["performance"],
         raw_data=df_all,
         validation=results["validation"],
-        time_chain=TIME_CHAIN,
         ordinal_sd=results.get("ordinal_sd"),
         ordinal_skew=results.get("ordinal_skew"),
     )
@@ -358,16 +361,16 @@ def build_priority(df_all):
     grade_cols = [c for c in enroll.columns if c.endswith("_male") or c.endswith("_female")]
     enroll["total_enrolled"] = enroll[grade_cols].sum(axis=1)
 
+    segment_pairs = _build_segment_pairs()
     all_segments = []
-    for seg_idx in range(len(TIME_CHAIN) - 1):
-        t_from = TIME_CHAIN[seg_idx]
-        t_to = TIME_CHAIN[seg_idx + 1]
+    for seg_idx, (t_from, t_to) in enumerate(segment_pairs):
         tp_from_label = _timepoint_label(*t_from)
         tp_to_label = _timepoint_label(*t_to)
 
         ranking_df, summary = compute_priority_ranking(
-            progress_df, seg_idx, TIME_CHAIN,
-            crosswalk_df, matched_lgu_df,
+            progress_df, seg_idx,
+            crosswalk_df=crosswalk_df,
+            matched_lgu_df=matched_lgu_df,
             enrollment_df=enroll,
         )
 
@@ -375,6 +378,7 @@ def build_priority(df_all):
             "School ID": ranking_df.index,
             "tp_from": tp_from_label,
             "tp_to": tp_to_label,
+            "segment_label": _segment_label(t_from, t_to),
             "need_pctile": ranking_df["need_pctile"].values,
             "impact_pctile": ranking_df["impact_pctile"].values,
             "capacity_gap_pctile": ranking_df["capacity_gap_pctile"].values,
@@ -426,7 +430,7 @@ def main():
     print("Building school_priority ...")
     priority = build_priority(df_all)
     priority.to_parquet(OUTPUT_DIR / "school_priority.parquet", index=False)
-    print(f"  → {len(priority)} rows ({priority['tp_from'].nunique()} segments)")
+    print(f"  → {len(priority)} rows ({priority['segment_label'].nunique()} segments)")
 
     print(f"\nAll files written to {OUTPUT_DIR}/")
 
