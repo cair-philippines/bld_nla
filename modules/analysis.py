@@ -21,14 +21,23 @@ from preprocessing import (
 
 
 # ---------------------------------------------------------------------------
-# Default time chain
+# Time chain configuration
 # ---------------------------------------------------------------------------
 
-TIME_CHAIN = [
-    ("2024-25", "BoSY"),
-    ("2024-25", "EoSY"),
-    ("2025-26", "BoSY"),
-]
+# Per-school-year chains. Segments are generated within each school year only
+# (no cross-year segments). MoSY is an optional mid-year checkpoint for
+# intervention schools.
+SCHOOL_YEAR_CHAINS = {
+    "2024-25": [("2024-25", "BoSY"), ("2024-25", "EoSY")],
+    "2025-26": [("2025-26", "BoSY"), ("2025-26", "MoSY"), ("2025-26", "EoSY")],
+}
+
+# Flat list of all timepoints (union), used for data loading and iteration.
+ALL_TIMEPOINTS = [tp for chain in SCHOOL_YEAR_CHAINS.values() for tp in chain]
+
+# Legacy alias — kept for backward compatibility with downstream code that
+# imports TIME_CHAIN. Points to ALL_TIMEPOINTS.
+TIME_CHAIN = ALL_TIMEPOINTS
 
 
 # ---------------------------------------------------------------------------
@@ -463,18 +472,59 @@ def _total_assessed(df):
 
 def _segment_label(t0, t1):
     """
-    Generate a human-readable label for a consecutive pair.
+    Generate a human-readable label for a within-school-year pair.
 
     BoSY → EoSY (same year)  → ``Learning_2024-25``
-    EoSY → BoSY (next year)  → ``Retention_2024-25_to_2025-26``
+    BoSY → MoSY (same year)  → ``BoSYMoSY_2025-26``
+    MoSY → EoSY (same year)  → ``MoSYEoSY_2025-26``
     """
     sy0, period0 = t0
     sy1, period1 = t1
     if period0 == "BoSY" and period1 == "EoSY" and sy0 == sy1:
         return f"Learning_{sy0}"
-    if period0 == "EoSY" and period1 == "BoSY":
-        return f"Retention_{sy0}_to_{sy1}"
+    if period0 == "BoSY" and period1 == "MoSY" and sy0 == sy1:
+        return f"BoSYMoSY_{sy0}"
+    if period0 == "MoSY" and period1 == "EoSY" and sy0 == sy1:
+        return f"MoSYEoSY_{sy0}"
     return f"{period0}_{sy0}_to_{period1}_{sy1}"
+
+
+def _build_segment_pairs(school_year_chains=None):
+    """
+    Build the list of segment pairs from per-school-year chains.
+
+    For each school year, generates:
+    - Consecutive pairs (e.g., BoSY→MoSY, MoSY→EoSY)
+    - A spanning BoSY→EoSY pair if an intermediate timepoint (MoSY) exists
+
+    Returns
+    -------
+    list of (t0, t1) tuples
+        Each element is a pair of (school_year, period) tuples defining
+        a segment.
+    """
+    if school_year_chains is None:
+        school_year_chains = SCHOOL_YEAR_CHAINS
+
+    pairs = []
+    for sy, chain in school_year_chains.items():
+        # Filter to timepoints that are actually in the chain
+        available = [tp for tp in chain]
+        if len(available) < 2:
+            continue
+
+        # Consecutive pairs
+        for i in range(len(available) - 1):
+            pairs.append((available[i], available[i + 1]))
+
+        # Spanning pair: BoSY→EoSY if there's an intermediate (MoSY)
+        if len(available) > 2:
+            first, last = available[0], available[-1]
+            # Only add if the spanning pair isn't already a consecutive pair
+            if (first, last) not in pairs:
+                pairs.append((first, last))
+
+    return pairs
 
 
 def compute_chain_progress(
@@ -482,19 +532,17 @@ def compute_chain_progress(
     raw_data,
     validation,
     time_chain=None,
+    school_year_chains=None,
     count_threshold=0.25,
     ordinal_sd=None,
     ordinal_skew=None,
 ):
     """
-    Compute pairwise segment deltas and composite progress across an
-    ordered time chain, with cross-timepoint validation built in.
+    Compute within-school-year segment deltas and composite progress.
 
-    For each consecutive pair ``(t_i, t_{i+1})`` in *time_chain*:
-
-    1. Check both endpoints have valid per-timepoint data.
-    2. Check raw student count stability (``count_threshold``).
-    3. If valid, segment delta = ``perf(t_{i+1}) - perf(t_i)``.
+    Iterates per school year (no cross-year segments). For each school
+    year chain, generates segments for consecutive pairs and a spanning
+    BoSY→EoSY segment if an intermediate timepoint (MoSY) exists.
 
     Parameters
     ----------
@@ -507,14 +555,16 @@ def compute_chain_progress(
         ``{(sy, period): DataFrame}`` — per-timepoint validation from
         Step 2b.
     time_chain : list of tuples, optional
-        Ordered ``[(sy, period), ...]``.  Defaults to ``TIME_CHAIN``.
+        Flat list of all timepoints for data loading. Defaults to
+        ``ALL_TIMEPOINTS``.
+    school_year_chains : dict, optional
+        ``{school_year: [(sy, period), ...]}`` defining per-year chains.
+        Defaults to ``SCHOOL_YEAR_CHAINS``.
     count_threshold : float, optional
         Maximum acceptable proportional change in total student count
         between adjacent time points.  Default 0.25 (25%).
     ordinal_sd : dict, optional
-        ``{(sy, period): Series}`` — ordinal SD from
-        ``compute_ordinal_moments``.  When provided (with
-        *ordinal_skew*), SD and skew columns are added to the output.
+        ``{(sy, period): Series}`` — ordinal SD.
     ordinal_skew : dict, optional
         ``{(sy, period): Series}`` — ordinal skewness.
 
@@ -527,9 +577,11 @@ def compute_chain_progress(
         ``segments_available``, and ``composite_score``.
     """
     if time_chain is None:
-        time_chain = TIME_CHAIN
+        time_chain = ALL_TIMEPOINTS
+    if school_year_chains is None:
+        school_year_chains = SCHOOL_YEAR_CHAINS
 
-    # ---- Collect all school IDs across the chain ----
+    # ---- Collect all school IDs across all timepoints ----
     all_schools = set()
     for key in time_chain:
         if key in performance:
@@ -555,11 +607,9 @@ def compute_chain_progress(
         result[col] = meta[col]
 
     # ---- Performance at each time point ----
-    perf_cols = []
     for key in time_chain:
         sy, period = key
         col = f"perf_{period}_{sy}"
-        perf_cols.append(col)
         if key in performance:
             result[col] = performance[key].reindex(idx)
         else:
@@ -575,18 +625,17 @@ def compute_chain_progress(
             result[sd_col] = ordinal_sd[key].reindex(idx) if key in ordinal_sd else np.nan
             result[skew_col] = ordinal_skew[key].reindex(idx) if key in ordinal_skew else np.nan
 
-    # ---- Segments ----
+    # ---- Build segment pairs from school-year chains ----
+    segment_pairs = _build_segment_pairs(school_year_chains)
+
     seg_delta_cols = []
     seg_valid_cols = []
     seg_valid_strict_cols = []
     seg_sd_delta_cols = []
     seg_skew_delta_cols = []
 
-    for i in range(len(time_chain) - 1):
-        t0 = time_chain[i]
-        t1 = time_chain[i + 1]
+    for seg_n, (t0, t1) in enumerate(segment_pairs, start=1):
         label = _segment_label(t0, t1)
-        seg_n = i + 1
 
         delta_col = f"seg{seg_n}_{label}"
         valid_col = f"seg{seg_n}_valid"
@@ -666,15 +715,20 @@ def compute_chain_progress(
     result["segments_available"] = result[seg_valid_cols].sum(axis=1)
     if seg_valid_strict_cols:
         result["segments_available_strict"] = result[seg_valid_strict_cols].sum(axis=1)
-    result["composite_score"] = result[seg_delta_cols].sum(
+
+    # Composite: sum of Learning (full-year) segment deltas only
+    learning_delta_cols = [c for c in seg_delta_cols if "Learning_" in c]
+    result["composite_score"] = result[learning_delta_cols].sum(
         axis=1, min_count=1
     )
 
     if has_moments:
-        result["composite_sd_delta"] = result[seg_sd_delta_cols].sum(
+        learning_sd_cols = [c for c in seg_sd_delta_cols if "Learning_" in c]
+        learning_skew_cols = [c for c in seg_skew_delta_cols if "Learning_" in c]
+        result["composite_sd_delta"] = result[learning_sd_cols].sum(
             axis=1, min_count=1
         )
-        result["composite_skew_delta"] = result[seg_skew_delta_cols].sum(
+        result["composite_skew_delta"] = result[learning_skew_cols].sum(
             axis=1, min_count=1
         )
 
@@ -691,20 +745,19 @@ def compute_chain_progress(
             f"mean delta = {mean_delta:.4f}"
         )
 
-    full_chain = result["segments_available"] == len(seg_valid_cols)
-    full_strict = (
-        result["segments_available_strict"] == len(seg_valid_strict_cols)
-        if "segments_available_strict" in result.columns
-        else pd.Series(False, index=result.index)
-    )
+    # Learning segments summary
+    learning_valid_cols = [seg_valid_cols[i] for i, c in enumerate(seg_delta_cols) if "Learning_" in c]
+    learning_strict_cols = [seg_valid_strict_cols[i] for i, c in enumerate(seg_delta_cols) if "Learning_" in c]
+    full_learning = result[learning_valid_cols].all(axis=1) if learning_valid_cols else pd.Series(False, index=idx)
+    full_learning_strict = result[learning_strict_cols].all(axis=1) if learning_strict_cols else pd.Series(False, index=idx)
     print(
-        f"\nFull chain ({len(seg_valid_cols)} segments): "
-        f"{full_chain.sum()}/{n_total} schools, "
-        f"{full_strict.sum()}/{n_total} strict"
+        f"\nBoth Learning segments valid: "
+        f"{full_learning.sum()}/{n_total} schools, "
+        f"{full_learning_strict.sum()}/{n_total} strict"
     )
     composite_valid = result["composite_score"].notna()
     print(
-        f"Composite score: {composite_valid.sum()} schools scored, "
+        f"Composite score (Learning segments): {composite_valid.sum()} schools scored, "
         f"mean = {result['composite_score'].mean():.4f}"
     )
 

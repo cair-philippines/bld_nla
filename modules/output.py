@@ -18,7 +18,7 @@ from preprocessing import (
     METADATA_COLUMNS,
     get_total_assessed,
 )
-from analysis import _segment_label, TIME_CHAIN
+from analysis import _segment_label, _build_segment_pairs, ALL_TIMEPOINTS, TIME_CHAIN
 
 
 # Category order matching crla_v2.py output

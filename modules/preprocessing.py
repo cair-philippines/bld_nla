@@ -7,6 +7,10 @@ column schema and converts raw counts to percentages per grade-language
 group.
 """
 
+import glob
+import os
+import re
+
 import numpy as np
 import pandas as pd
 
@@ -49,6 +53,51 @@ CRLA_RAW_FILES = {
         "Assessment Results_Table.csv"
     ),
 }
+
+# Dashboard export directory (automated Looker Studio scraper output).
+# Files follow the naming convention: CRLA_{period}_{school_year}_{timestamp}.csv
+DASHBOARD_EXPORT_DIR = "data/raw/dashboard_export"
+
+
+def resolve_latest_exports(export_dir=None):
+    """
+    Scan the dashboard export directory and return a file_map with the most
+    recent CSV for each (school_year, period) combination.
+
+    Parameters
+    ----------
+    export_dir : str, optional
+        Path to the dashboard export directory.
+        Defaults to ``DASHBOARD_EXPORT_DIR``.
+
+    Returns
+    -------
+    dict
+        ``{(school_year, period): path}`` with the latest file per timepoint.
+    """
+    if export_dir is None:
+        export_dir = DASHBOARD_EXPORT_DIR
+
+    pattern = os.path.join(export_dir, "CRLA_*.csv")
+    files = glob.glob(pattern)
+
+    # Parse filenames: CRLA_{period}_{school_year}_{timestamp}.csv
+    # e.g. CRLA_BoSY_2025-26_20260319_090545.csv
+    name_re = re.compile(
+        r"CRLA_(\w+)_(\d{4}-\d{2})_(\d{8}_\d{6})\.csv$"
+    )
+
+    latest = {}  # (sy, period) -> (timestamp_str, path)
+    for fpath in files:
+        m = name_re.search(os.path.basename(fpath))
+        if not m:
+            continue
+        period, sy, ts = m.group(1), m.group(2), m.group(3)
+        key = (sy, period)
+        if key not in latest or ts > latest[key][0]:
+            latest[key] = (ts, fpath)
+
+    return {key: path for key, (_, path) in latest.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -119,12 +168,14 @@ def harmonize_columns(df):
     # 4. Drop grade-level Total columns
     grade_cols = [c for c in grade_cols if "total" not in c.lower()]
 
-    # 5. Validate all canonical columns are present
+    # 5. Validate canonical columns — fill missing ones as NaN
+    #    (MoSY 2025-26 is missing G3 MT columns — this is expected)
     missing = set(CANONICAL_GRADE_COLUMNS) - set(grade_cols)
     if missing:
-        raise ValueError(
-            f"After harmonization, expected columns are missing: {missing}"
-        )
+        for col in missing:
+            df[col] = np.nan
+        print(f"  ⚠ Filled {len(missing)} missing grade columns with NaN: "
+              f"{sorted(missing)}")
 
     unexpected = set(grade_cols) - set(CANONICAL_GRADE_COLUMNS)
     if unexpected:
@@ -153,7 +204,7 @@ def load_assessment_file(path, school_year, period, source="gcs"):
     school_year : str
         e.g. ``'2024-25'``.
     period : str
-        ``'BoSY'`` or ``'EoSY'``.
+        ``'BoSY'``, ``'MoSY'``, or ``'EoSY'``.
     source : str
         ``'gcs'`` (default) or ``'local'``.
 
