@@ -4,7 +4,7 @@
 
 The Classroom Reading Level Assessment (CRLA) is the Department of Education's standardized tool for measuring early-grade reading proficiency across Philippine public schools. This project implements a reproducible analytical pipeline that harmonizes raw CRLA data across school years, quantifies each school's proficiency distribution through three statistical moments (mean, standard deviation, and skewness), tracks progress between consecutive assessment periods, and produces a principled priority ranking of schools for intervention targeting.
 
-The pipeline currently covers three timepoints — BoSY 2024-25, EoSY 2024-25, and BoSY 2025-26 — spanning approximately 39,000 schools and over 10 million assessed learners in Grades 1-3. National results show a within-year gain of +0.82 ordinal levels (BoSY to EoSY 2024-25) followed by a cross-year decline of -1.04 (EoSY 2024-25 to BoSY 2025-26), yielding a net regression of -0.14 across the observation window.
+The pipeline covers five timepoints across two school years — BoSY 2024-25, EoSY 2024-25, BoSY 2025-26, MoSY 2025-26 (intervention subset), and EoSY 2025-26 — spanning approximately 39,000 schools and over 10 million assessed learners in Grades 1-3. Schools are evaluated on **within-school-year segments only** (BoSY → EoSY per school year), avoiding cross-year confounds such as summer learning loss. National results show within-year gains of +0.82 ordinal levels (SY 2024-25) and +1.10 ordinal levels (SY 2025-26).
 
 To answer *where interventions should be focused*, the pipeline combines each school's academic need, student population size, and local government fiscal capacity into a composite priority score. Sensitivity analysis confirms that the resulting priority list is robust to methodological choices: the top-100 intervention targets are stable across 500 random weight configurations, with 60% of all ranked schools showing near-zero rank volatility.
 
@@ -42,11 +42,19 @@ The central policy questions this analysis addresses:
 
 ### 3.1 CRLA Assessment Files
 
-| Timepoint | File | Schools |
-|-----------|------|---------|
-| BoSY 2024-25 | `CRLA Results Archive_SY 2024-25 Assessment Results_Table_BoSY.csv` | 35,280 |
-| EoSY 2024-25 | `CRLA Results Archive_SY 2024-25 Assessment Results_Table_EoSY.csv` | 37,045 |
-| BoSY 2025-26 | `CRLA National Dashboard_BoSY 2025-26 Assessment Results_Table.csv` | 38,965 |
+Assessment data is sourced from an automated Looker Studio exporter (`notebooks/0.2-export_data_from_crla_dashboard.ipynb`) that produces timestamped CSVs in `data/raw/dashboard_export/`. The pipeline's `resolve_latest_exports()` function automatically selects the most recent file per timepoint.
+
+| Timepoint | Schools | Schema |
+|-----------|---------|--------|
+| BoSY 2024-25 | 35,280 | 50 cols (Type A) |
+| EoSY 2024-25 | 37,045 | 50 cols (Type A) |
+| BoSY 2025-26 | 38,981 | 53 cols (Type B) |
+| MoSY 2025-26 | 38,297 | 47 cols (Type C — intervention subset) |
+| EoSY 2025-26 | 38,322 | 53 cols (Type B) |
+
+**Schema variants:** Type A (SY 2024-25) uses combined grade-level totals. Type B (SY 2025-26) uses per-language totals (`G2 Total MT Assessed`, etc.). Type C (MoSY) is missing G3 MT entirely (5 of 6 grade-language groups) — the pipeline fills these as NaN and validation handles the reduced group count gracefully.
+
+**MoSY 2025-26** is a mid-year checkpoint administered only to schools participating in a specific literacy intervention. It is not a universal assessment — segments involving MoSY are computed only for the intervention subset.
 
 ### 3.2 External Data Sources
 
@@ -66,6 +74,8 @@ The raw CRLA CSVs from different school years exhibit several inconsistencies th
 2. **Header typos**: `G2 FIl Higher Emergent` (capital I) appears in both years.
 3. **Extra aggregate columns**: 2025-26 introduces per-grade Total Assessed columns not present in 2024-25.
 4. **Encoding corruption**: Mojibake affecting approximately 28 school names per file (e.g., `ñ` corrupted to `¤`).
+5. **Missing grade-language groups**: MoSY 2025-26 and EoSY 2025-26 are missing G3 MT columns entirely. The harmonizer fills these with NaN rather than failing.
+6. **Dashboard export format**: Automated exports use decimal fractions (0.386) for aggregate percentages and raw integers for counts, while original archive files use percentage strings ("38.59%") and comma-separated quoted strings ("2,814"). The 30 canonical grade columns contain raw integer counts in both formats, so no conversion is needed for the pipeline's core computation.
 
 Reference: [`documentation/step_1_schema_harmonizer.md`](documentation/step_1_schema_harmonizer.md)
 
@@ -144,31 +154,45 @@ A segment delta between two timepoints additionally requires: (1) both endpoints
 
 The count-stability check guards against school mergers, splits, or data-entry errors that would make a progress comparison misleading.
 
-### 4.4 Chain-Based Progress Scoring
+### 4.4 Within-School-Year Progress Scoring
 
-An ordered time chain defines the sequence of assessment periods:
+Progress is measured **within each school year only** — no cross-year segments are computed. This avoids conflating school performance with summer learning loss and new-cohort effects.
 
-```math
-t_1 \;\rightarrow\; t_2 \;\rightarrow\; t_3 \quad = \quad \text{BoSY 2024-25} \;\rightarrow\; \text{EoSY 2024-25} \;\rightarrow\; \text{BoSY 2025-26}
+Per-school-year chains define the assessment sequences:
+
+```
+SY 2024-25:  BoSY ──────────────────── EoSY
+                   Learning_2024-25
+
+SY 2025-26:  BoSY ──── MoSY ──── EoSY
+                   BoSYMoSY  MoSYEoSY
+                   └── Learning_2025-26 ──┘
 ```
 
-For each consecutive pair in the chain, a **segment delta** is the change in ordinal mean:
+For each segment pair, the **segment delta** is the change in ordinal mean:
 
 ```math
 \Delta_i = \bar{x}_{t_{i+1}} - \bar{x}_{t_i}
 ```
 
-The **composite progress score** is the sum of all valid segment deltas, representing cumulative progress across the full chain:
+| Segment | Pair | Scope |
+|---------|------|-------|
+| `Learning_2024-25` | BoSY → EoSY 2024-25 | All schools |
+| `Learning_2025-26` | BoSY → EoSY 2025-26 | All schools |
+| `BoSYMoSY_2025-26` | BoSY → MoSY 2025-26 | Intervention subset |
+| `MoSYEoSY_2025-26` | MoSY → EoSY 2025-26 | Intervention subset |
+
+The **composite progress score** is the sum of the two full-year Learning segment deltas, representing cumulative within-year progress across both school years:
 
 ```math
-\Delta_{\text{composite}} = \sum_{i} \Delta_i
+\Delta_{\text{composite}} = \Delta_{\text{Learning\_2024-25}} + \Delta_{\text{Learning\_2025-26}}
 ```
 
-Segment deltas are also computed for SD and skewness, tracking how distributional shape changes over time.
+Schools must have valid data at both endpoints of a segment to receive a delta. The composite requires valid data in both school years.
 
-The pipeline extends automatically when new timepoints are added — appending a new entry to the time chain produces new segment deltas without modifying any existing computations.
+Segment deltas are also computed for SD and skewness, tracking how distributional shape changes over time. The pipeline extends automatically when new school years are added to `SCHOOL_YEAR_CHAINS`.
 
-Reference: [`documentation/step_3_chain_progress.md`](documentation/step_3_chain_progress.md)
+Reference: [`documentation/step_3_chain_progress.md`](documentation/step_3_chain_progress.md), [`documentation/within_year_evaluation.md`](documentation/within_year_evaluation.md)
 
 ### 4.5 LGU Matching
 
@@ -237,38 +261,56 @@ Reference: [`documentation/sensitivity_analysis.md`](documentation/sensitivity_a
 
 ### 5.1 National Proficiency Trends
 
-Across 29,854 schools with valid data at all three timepoints:
-
 | Timepoint | Mean | SD | Skewness | Interpretation |
 |-----------|------|-----|----------|----------------|
 | BoSY 2024-25 | 3.30 | 1.07 | -0.49 | Between Developing and Transitioning |
 | EoSY 2024-25 | 4.13 | 0.87 | -1.18 | Above Transitioning |
 | BoSY 2025-26 | 3.06 | 1.08 | -0.31 | Just above Developing |
+| MoSY 2025-26 | 3.23 | 0.96 | -0.41 | Between Developing and Transitioning |
+| EoSY 2025-26 | 4.15 | 0.83 | -1.13 | Above Transitioning |
 
-| Segment | Mean Delta | Direction |
-|---------|-----------|-----------|
-| BoSY 2024-25 → EoSY 2024-25 | +0.82 | Within-year improvement |
-| EoSY 2024-25 → BoSY 2025-26 | -1.04 | Cross-year decline |
-| **Composite** | **-0.14** | **Slight net regression** |
+| Segment | Mean Delta | Schools (strict) |
+|---------|-----------|-----------------|
+| Learning 2024-25 (BoSY → EoSY) | **+0.82** | 22,206 |
+| Learning 2025-26 (BoSY → EoSY) | **+1.10** | 19,605 |
+| BoSYMoSY 2025-26 (intervention subset) | +0.56 | 9,061 |
+| MoSYEoSY 2025-26 (intervention subset) | +0.56 | 9,722 |
 
-The within-year gain indicates that schools moved learners upward by nearly a full proficiency level on average during SY 2024-25. However, the cross-year decline (summer learning loss plus new-cohort effects) more than offset this gain, resulting in a small net regression over the full observation window.
+Both school years show strong within-year gains. SY 2025-26 shows an even larger improvement (+1.10) than SY 2024-25 (+0.82), with the national EoSY mean reaching 4.15 — above the Transitioning level. The intervention subset shows balanced gains across both halves of the year (+0.56 each).
 
 ### 5.2 Validation Coverage
 
-| Tier | BoSY 2024-25 | EoSY 2024-25 | BoSY 2025-26 |
-|------|-------------|-------------|-------------|
-| Basic (at least 1 group with data) | 35,280 (100%) | 37,042 (>99%) | 38,964 (>99%) |
-| Strict (all grades, ≥4 groups, ≥15 per group) | 22,961 (65%) | 24,380 (66%) | 24,303 (62%) |
-| Full chain, strict (all 3 timepoints) | 19,152 (49%) | | |
+| Tier | BoSY 2024-25 | EoSY 2024-25 | BoSY 2025-26 | MoSY 2025-26 | EoSY 2025-26 |
+|------|-------------|-------------|-------------|-------------|-------------|
+| Basic | 35,280 (100%) | 37,042 (>99%) | 38,980 (>99%) | 38,297 (100%) | 38,322 (100%) |
+| Strict | 22,961 (65%) | 24,380 (66%) | 24,303 (62%) | 14,182 (37%) | 23,042 (60%) |
+
+| Cross-timepoint tier | Schools |
+|---------------------|---------|
+| Both Learning segments strict (2024-25 + 2025-26) | 16,824 |
+
+MoSY strict rate is 37% because (a) it is an intervention subset and (b) G3 MT data is absent, reducing group breadth for some schools.
 
 ### 5.3 Priority Ranking
 
-| Segment | Strict-Valid | Ranked | Dropped (missing LGU data) |
-|---------|------------|--------|--------------------------|
-| BoSY → EoSY 2024-25 | 22,206 | 22,114 | 92 |
-| EoSY 2024-25 → BoSY 2025-26 | 20,855 | 20,766 | 89 |
+**Per-segment rankings:**
 
-Capacity gap statistics (SEF per capita): national median = PHP 355; mean = PHP 954.
+| Segment | Strict-Valid | Ranked | Dropped |
+|---------|------------|--------|---------|
+| Learning 2024-25 | 22,206 | 22,114 | 92 |
+| BoSYMoSY 2025-26 | 9,061 | 8,996 | 65 |
+| MoSYEoSY 2025-26 | 9,722 | 9,652 | 70 |
+| Learning 2025-26 | 19,605 | 19,441 | 164 |
+
+**Composite ranking** (both Learning segments, stakeholder-facing output):
+
+| Metric | Value |
+|--------|-------|
+| Valid in both years (strict) | 16,824 |
+| Ranked (composite) | 16,765 |
+| Output file | `output/priority_ranking_composite.xlsx` |
+
+The composite ranking uses the average of both Learning segment deltas for the Need pillar, EoSY 2025-26 as the proficiency endpoint, and assessed learner count at EoSY 2025-26 for Impact.
 
 ### 5.4 Sensitivity Analysis
 
@@ -316,6 +358,7 @@ project_crla/
 │
 ├── documentation/                     Detailed methodology references
 │   ├── multi_year_expansion_plan.md   Overall pipeline design and rationale
+│   ├── within_year_evaluation.md      Within-school-year evaluation workflow
 │   ├── step_1_schema_harmonizer.md    Schema normalization details
 │   ├── step_2_percentages_and_scoring.md  Scoring methodology comparison
 │   ├── step_3_chain_progress.md       Chain-based progress scoring
@@ -328,6 +371,7 @@ project_crla/
 │   └── dashboard_plan.md              Streamlit dashboard specifications
 │
 ├── notebooks/                         Stakeholder presentation notebooks
+│   ├── 0.2-export_data_from_crla_dashboard.ipynb  Automated Looker Studio exporter
 │   ├── 1.0_methodology_walkthrough.ipynb   Three-pillar methodology explainer
 │   ├── 2.0_portfolio_analysis_131_schools.ipynb  Legacy list re-evaluation
 │   └── 3.0_cycle2_interpretability.ipynb   Cycle 2 interpretability analysis
@@ -339,9 +383,11 @@ project_crla/
 │
 ├── data/
 │   ├── raw/                           Input CSVs and external data files
+│   │   └── dashboard_export/          Automated Looker Studio CSV exports
 │   └── modified/                      Crosswalks and reference files
 │
 ├── output/                            Pipeline outputs
+│   ├── priority_ranking_composite.xlsx  Composite ranking (stakeholder-facing)
 │   ├── priority_ranking_sef.*.csv     Priority rankings by segment
 │   ├── sensitivity_*.csv              Sensitivity analysis outputs
 │   └── crla_progress_score.*.csv      Pairwise progress CSVs
@@ -366,51 +412,32 @@ project_crla/
 ```python
 import sys
 sys.path.insert(0, 'modules')
-from preprocessing import load_all_assessments
+from preprocessing import resolve_latest_exports, load_all_assessments
 
-file_map = {
-    ('2024-25', 'BoSY'): 'data/raw/CRLA Results Archive_SY 2024-25 Assessment Results_Table_BoSY.csv',
-    ('2024-25', 'EoSY'): 'data/raw/CRLA Results Archive_SY 2024-25 Assessment Results_Table_EoSY.csv',
-    ('2025-26', 'BoSY'): 'data/raw/CRLA National Dashboard_BoSY 2025-26 Assessment Results_Table.csv',
-}
+# Automatically finds the most recent CSV per timepoint from dashboard_export/
+file_map = resolve_latest_exports()
 df_all = load_all_assessments(file_map=file_map, source='local')
 ```
 
 **2. Compute ordinal moments and chain progress:**
 
 ```python
-from analysis import process_all_timepoints, compute_chain_progress, TIME_CHAIN
+from analysis import process_all_timepoints, compute_chain_progress
 
 results = process_all_timepoints(df_all, scoring='ordinal')
 progress_df = compute_chain_progress(
     performance=results['performance'],
     raw_data=df_all,
     validation=results['validation'],
-    time_chain=TIME_CHAIN,
     ordinal_sd=results['ordinal_sd'],
     ordinal_skew=results['ordinal_skew'],
 )
 ```
 
-**3. Export pairwise progress CSVs:**
+**3. Generate priority rankings:**
 
 ```python
-from output import export_pairwise_csvs
-
-export_pairwise_csvs(
-    percentages=results['percentages'],
-    performance=results['performance'],
-    validation=results['validation'],
-    raw_data=df_all,
-    weights=results['weights'],
-    time_chain=TIME_CHAIN,
-    output_dir='output',
-)
-```
-
-**4. Generate priority rankings:**
-
-```python
+from analysis import _build_segment_pairs, _segment_label
 from lgu_matching import load_deped_psgc, load_lgu_revenue, build_school_lgu_crosswalk, match_lgu_revenue
 from priority_ranking import compute_priority_ranking
 
@@ -419,21 +446,23 @@ crosswalk_df = build_school_lgu_crosswalk(psgc_df)
 lgu_revenue_df = load_lgu_revenue('data/raw/By-LGU-SRE-2024.xlsx')
 matched_lgu_df, unmatched_df, match_log = match_lgu_revenue(crosswalk_df, lgu_revenue_df)
 
-for seg_idx in range(len(TIME_CHAIN) - 1):
+for seg_idx, (t0, t1) in enumerate(_build_segment_pairs()):
     ranking_df, summary = compute_priority_ranking(
-        progress_df, seg_idx, TIME_CHAIN, crosswalk_df, matched_lgu_df,
+        progress_df, seg_idx,
+        crosswalk_df=crosswalk_df, matched_lgu_df=matched_lgu_df,
     )
-    ranking_df.to_csv(f'output/priority_ranking_sef.{summary["segment"]}.csv')
+    label = _segment_label(t0, t1)
+    ranking_df.to_csv(f'output/priority_ranking_sef.{label}.csv')
 ```
 
-**5. Run sensitivity analysis:**
+**4. Run sensitivity analysis:**
 
 ```python
 from sensitivity_analysis import run_scenario_comparison, run_robustness_analysis
 
-for seg_idx in range(len(TIME_CHAIN) - 1):
-    scen = run_scenario_comparison(progress_df, seg_idx, TIME_CHAIN, crosswalk_df, matched_lgu_df)
-    rob = run_robustness_analysis(progress_df, seg_idx, TIME_CHAIN, crosswalk_df, matched_lgu_df)
+for seg_idx, (t0, t1) in enumerate(_build_segment_pairs()):
+    scen = run_scenario_comparison(progress_df, seg_idx, crosswalk_df=crosswalk_df, matched_lgu_df=matched_lgu_df)
+    rob = run_robustness_analysis(progress_df, seg_idx, crosswalk_df=crosswalk_df, matched_lgu_df=matched_lgu_df)
 ```
 
 ### 7.3 Data Access
@@ -444,9 +473,9 @@ Raw input files can be loaded from local paths (as shown above) or from Google C
 
 When new assessment data becomes available:
 
-1. Place the raw CSV in `data/raw/`.
-2. Add the corresponding `(school_year, period)` entry to `file_map` and `TIME_CHAIN`.
-3. Re-run the pipeline. New segment deltas and priority rankings are computed automatically; existing segments are unchanged.
+1. Export the CSV via the automated Looker Studio exporter (notebook `0.2`) or place it manually in `data/raw/dashboard_export/` following the naming convention `CRLA_{period}_{school_year}_{timestamp}.csv`.
+2. If adding a new school year or period type (e.g., MoSY), add the corresponding entry to `SCHOOL_YEAR_CHAINS` in `modules/analysis.py`.
+3. Re-run the pipeline. `resolve_latest_exports()` automatically picks up the new file. New within-year segment deltas and priority rankings are computed automatically; existing segments are unchanged.
 
 ## 8. AI Disclosure
 
