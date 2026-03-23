@@ -104,7 +104,9 @@ The 2nd cycle priority school list will be **regenerated** based on the within-s
 - Both Learning segments valid: 28,560 (16,824 strict)
 - Composite score (Learning segments): 37,509 schools, mean +1.67
 - EoSY 2025-26 national mean: 4.15 (vs 4.13 in EoSY 2024-25)
-- Old `Retention_2024-25_to_2025-26.csv` still in output/ (archive)
+- Old `Retention_2024-25_to_2025-26.csv` removed from output/
+- Composite ranking: `output/priority_ranking_composite.xlsx` (16,765 ranked, 131 1st-cycle tagged)
+- Build script: `scripts/build_composite_ranking.py` (permanent, rerunnable)
 
 ## Technical Notes
 

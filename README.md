@@ -376,6 +376,9 @@ project_crla/
 │   ├── 2.0_portfolio_analysis_131_schools.ipynb  Legacy list re-evaluation
 │   └── 3.0_cycle2_interpretability.ipynb   Cycle 2 interpretability analysis
 │
+├── scripts/                           Standalone pipeline scripts
+│   └── build_composite_ranking.py     Generates priority_ranking_composite.xlsx
+│
 ├── dashboard/                         Interactive Streamlit dashboard
 │   ├── app.py                         Application router
 │   ├── pages/                         Dashboard views
