@@ -468,6 +468,14 @@ for seg_idx, (t0, t1) in enumerate(_build_segment_pairs()):
     rob = run_robustness_analysis(progress_df, seg_idx, crosswalk_df=crosswalk_df, matched_lgu_df=matched_lgu_df)
 ```
 
+**5. Build composite ranking (stakeholder-facing output):**
+
+```bash
+python scripts/build_composite_ranking.py
+```
+
+This generates `output/priority_ranking_composite.xlsx` — a single Excel file ranking schools based on the composite of both Learning segments. The output contains four sheets: all ranked schools (with 1st-cycle tags, Province, and Municipality), top 100 priority schools (1st-cycle excluded), a reference sheet of all 39,438 schools with validity flags, and methodology notes.
+
 ### 7.3 Data Access
 
 Raw input files can be loaded from local paths (as shown above) or from Google Cloud Storage. The default configuration in `modules/gcs_utils.py` points to the GCS bucket `data_ecair_paaral/raw/`. For local execution, pass a custom `file_map` to `load_all_assessments()` as shown above.
