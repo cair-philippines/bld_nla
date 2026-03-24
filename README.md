@@ -48,9 +48,9 @@ Assessment data is sourced from an automated Looker Studio exporter (`notebooks/
 |-----------|---------|--------|
 | BoSY 2024-25 | 35,280 | 50 cols (Type A) |
 | EoSY 2024-25 | 37,045 | 50 cols (Type A) |
-| BoSY 2025-26 | 38,981 | 53 cols (Type B) |
+| BoSY 2025-26 | 38,983 | 53 cols (Type B) |
 | MoSY 2025-26 | 38,297 | 47 cols (Type C — intervention subset) |
-| EoSY 2025-26 | 38,322 | 53 cols (Type B) |
+| EoSY 2025-26 | 38,743 | 53 cols (Type B) |
 
 **Schema variants:** Type A (SY 2024-25) uses combined grade-level totals. Type B (SY 2025-26) uses per-language totals (`G2 Total MT Assessed`, etc.). Type C (MoSY) is missing G3 MT entirely (5 of 6 grade-language groups) — the pipeline fills these as NaN and validation handles the reduced group count gracefully.
 
@@ -272,9 +272,9 @@ Reference: [`documentation/sensitivity_analysis.md`](documentation/sensitivity_a
 | Segment | Mean Delta | Schools (strict) |
 |---------|-----------|-----------------|
 | Learning 2024-25 (BoSY → EoSY) | **+0.82** | 22,206 |
-| Learning 2025-26 (BoSY → EoSY) | **+1.10** | 19,605 |
+| Learning 2025-26 (BoSY → EoSY) | **+1.10** | 19,799 |
 | BoSYMoSY 2025-26 (intervention subset) | +0.56 | 9,061 |
-| MoSYEoSY 2025-26 (intervention subset) | +0.56 | 9,722 |
+| MoSYEoSY 2025-26 (intervention subset) | +0.56 | 9,837 |
 
 Both school years show strong within-year gains. SY 2025-26 shows an even larger improvement (+1.10) than SY 2024-25 (+0.82), with the national EoSY mean reaching 4.15 — above the Transitioning level. The intervention subset shows balanced gains across both halves of the year (+0.56 each).
 
@@ -282,12 +282,12 @@ Both school years show strong within-year gains. SY 2025-26 shows an even larger
 
 | Tier | BoSY 2024-25 | EoSY 2024-25 | BoSY 2025-26 | MoSY 2025-26 | EoSY 2025-26 |
 |------|-------------|-------------|-------------|-------------|-------------|
-| Basic | 35,280 (100%) | 37,042 (>99%) | 38,980 (>99%) | 38,297 (100%) | 38,322 (100%) |
-| Strict | 22,961 (65%) | 24,380 (66%) | 24,303 (62%) | 14,182 (37%) | 23,042 (60%) |
+| Basic | 35,280 (100%) | 37,042 (>99%) | 38,982 (>99%) | 38,297 (100%) | 38,743 (100%) |
+| Strict | 22,961 (65%) | 24,380 (66%) | 24,304 (62%) | 14,182 (37%) | 23,299 (60%) |
 
 | Cross-timepoint tier | Schools |
 |---------------------|---------|
-| Both Learning segments strict (2024-25 + 2025-26) | 16,824 |
+| Both Learning segments strict (2024-25 + 2025-26) | 16,959 |
 
 MoSY strict rate is 37% because (a) it is an intervention subset and (b) G3 MT data is absent, reducing group breadth for some schools.
 
@@ -299,15 +299,15 @@ MoSY strict rate is 37% because (a) it is an intervention subset and (b) G3 MT d
 |---------|------------|--------|---------|
 | Learning 2024-25 | 22,206 | 22,114 | 92 |
 | BoSYMoSY 2025-26 | 9,061 | 8,996 | 65 |
-| MoSYEoSY 2025-26 | 9,722 | 9,652 | 70 |
-| Learning 2025-26 | 19,605 | 19,441 | 164 |
+| MoSYEoSY 2025-26 | 9,837 | 9,764 | 73 |
+| Learning 2025-26 | 19,799 | 19,624 | 175 |
 
 **Composite ranking** (both Learning segments, stakeholder-facing output):
 
 | Metric | Value |
 |--------|-------|
-| Valid in both years (strict) | 16,824 |
-| Ranked (composite) | 16,765 |
+| Valid in both years (strict) | 16,959 |
+| Ranked (composite) | 16,900 |
 | Output file | `output/priority_ranking_composite.xlsx` |
 
 The composite ranking uses the average of both Learning segment deltas for the Need pillar, EoSY 2025-26 as the proficiency endpoint, and assessed learner count at EoSY 2025-26 for Impact.

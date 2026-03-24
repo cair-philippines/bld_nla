@@ -14,9 +14,9 @@ Five CRLA datasets exported via automated Looker Studio scraper (`notebooks/0.2-
 |------|-----------|---------|--------|
 | `CRLA_BoSY_2024-25_*.csv` | BoSY 2024-25 | 35,280 | 50 cols (Type A) |
 | `CRLA_EoSY_2024-25_*.csv` | EoSY 2024-25 | 37,045 | 50 cols (Type A) |
-| `CRLA_BoSY_2025-26_*.csv` | BoSY 2025-26 | 38,981 | 53 cols (Type B) |
+| `CRLA_BoSY_2025-26_*.csv` | BoSY 2025-26 | 38,983 | 53 cols (Type B) |
 | `CRLA_MoSY_2025-26_*.csv` | MoSY 2025-26 | 38,297 | 47 cols (Type C) |
-| `CRLA_EoSY_2025-26_*.csv` | EoSY 2025-26 | 38,322 | 53 cols (Type B) |
+| `CRLA_EoSY_2025-26_*.csv` | EoSY 2025-26 | 38,743 | 53 cols (Type B) |
 
 Location: `data/raw/dashboard_export/`
 
@@ -97,16 +97,23 @@ The 2nd cycle priority school list will be **regenerated** based on the within-s
 |---------|-------------|--------|------------|
 | Learning_2024-25 | 22,206 | 22,114 | +0.82 |
 | BoSYMoSY_2025-26 | 9,061 | 8,996 | +0.56 |
-| MoSYEoSY_2025-26 | 9,722 | 9,652 | +0.56 |
-| Learning_2025-26 | 19,605 | 19,441 | +1.10 |
+| MoSYEoSY_2025-26 | 9,837 | 9,764 | +0.56 |
+| Learning_2025-26 | 19,799 | 19,624 | +1.10 |
 
-- Total schools (union): 39,438
-- Both Learning segments valid: 28,560 (16,824 strict)
-- Composite score (Learning segments): 37,509 schools, mean +1.67
+- Total schools (union): 39,447
+- Both Learning segments valid: 28,782 (16,959 strict)
+- Composite score (Learning segments): 37,596 schools, mean +1.68
 - EoSY 2025-26 national mean: 4.15 (vs 4.13 in EoSY 2024-25)
 - Old `Retention_2024-25_to_2025-26.csv` removed from output/
-- Composite ranking: `output/priority_ranking_composite.xlsx` (16,765 ranked, 131 1st-cycle tagged)
+- Composite ranking: `output/priority_ranking_composite.xlsx` (16,900 ranked, 131 1st-cycle tagged)
 - Build script: `scripts/build_composite_ranking.py` (permanent, rerunnable)
+
+### Data refresh log
+
+| Date | Source | Change |
+|------|--------|--------|
+| 2026-03-19 | Initial dashboard export | 5 CSVs, baseline counts |
+| 2026-03-24 | Updated dashboard export | EoSY 2025-26 +421 schools (38,322→38,743), BoSY 2025-26 +2 (38,981→38,983). +135 composite-ranked schools. National means unchanged. |
 
 ## Technical Notes
 
