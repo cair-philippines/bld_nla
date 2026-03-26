@@ -114,6 +114,7 @@ The 2nd cycle priority school list will be **regenerated** based on the within-s
 |------|--------|--------|
 | 2026-03-19 | Initial dashboard export | 5 CSVs, baseline counts |
 | 2026-03-24 | Updated dashboard export | EoSY 2025-26 +421 schools (38,322→38,743), BoSY 2025-26 +2 (38,981→38,983). +135 composite-ranked schools. National means unchanged. |
+| 2026-03-25 | Net gain columns | Added Net Gain Trans+ and Net Gain GL columns (both SYs) to composite Excel. Net change in student counts at Transitioning+ and Grade Level from BoSY→EoSY. |
 
 ## Technical Notes
 

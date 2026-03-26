@@ -474,7 +474,7 @@ for seg_idx, (t0, t1) in enumerate(_build_segment_pairs()):
 python scripts/build_composite_ranking.py
 ```
 
-This generates `output/priority_ranking_composite.xlsx` — a single Excel file ranking schools based on the composite of both Learning segments. The output contains four sheets: all ranked schools (with 1st-cycle tags, Province, and Municipality), top 100 priority schools (1st-cycle excluded), a reference sheet of all 39,438 schools with validity flags, and methodology notes.
+This generates `output/priority_ranking_composite.xlsx` — a single Excel file ranking schools based on the composite of both Learning segments. The output contains four sheets: all ranked schools (with 1st-cycle tags, Province, Municipality, and net student gain columns), top 100 priority schools (1st-cycle excluded), a reference sheet of all schools with validity flags, and methodology notes.
 
 ### 7.3 Data Access
 

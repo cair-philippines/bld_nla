@@ -76,6 +76,8 @@ To make this concrete, here are two real schools from the ranking.
 
 Sibuco CS is in Sibuco, Zamboanga del Norte (Region IX). At the end of SY 2025-26, its average reading score was **2.80** — most students are between Higher Emergent and Developing. Over two school years, students improved only modestly: +0.37 levels in SY 2024-25 and +0.85 in SY 2025-26. There are **1,223 assessed students**. The municipality of Sibuco spends only **PHP 23 per student** from its Special Education Fund — one of the lowest in the country.
 
+In concrete student terms, during SY 2025-26 Sibuco CS saw a net gain of **220 students** reaching Transitioning or above, and **64 more students** reading at Grade Level compared to the start of the year.
+
 Sibuco CS ranks at the top because it checks all three boxes: students are struggling (Need: 99th percentile), there are many of them (Impact: 96th percentile), and the local government has almost no capacity to help (Capacity Gap: 100th percentile).
 
 ### Tagaytay Elementary School — Rank 8,383 (50th percentile)

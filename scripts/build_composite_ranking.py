@@ -29,7 +29,10 @@ from openpyxl.styles import Font, Alignment
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "modules"))
 
-from preprocessing import resolve_latest_exports, load_all_assessments, get_total_assessed
+from preprocessing import (
+    resolve_latest_exports, load_all_assessments, get_total_assessed,
+    CANONICAL_GRADE_COLUMNS, _clean_raw_to_numeric,
+)
 from analysis import (
     process_all_timepoints, compute_chain_progress,
     _build_segment_pairs, _segment_label,
@@ -50,6 +53,22 @@ OUTPUT_PATH = PROJECT_ROOT / "output" / "priority_ranking_composite.xlsx"
 PSGC_PATH = PROJECT_ROOT / "data/raw/SY 2024-2025 School Level Database WITH PSGC.xlsx"
 BLGF_PATH = PROJECT_ROOT / "data/raw/By-LGU-SRE-2024.xlsx"
 ENROLLMENT_PATH = PROJECT_ROOT / "data/raw/public_project_bukas_enrollment_2024-25.csv"
+
+
+_TRANS_COLS = [c for c in CANONICAL_GRADE_COLUMNS if "Transitioning" in c]
+_GL_COLS = [c for c in CANONICAL_GRADE_COLUMNS if "Grade Level" in c]
+
+
+def _count_trans_plus(raw_df):
+    """Count students at Transitioning or Grade Level per school (from raw counts)."""
+    clean = _clean_raw_to_numeric(raw_df)
+    return clean[_TRANS_COLS + _GL_COLS].sum(axis=1)
+
+
+def _count_gl(raw_df):
+    """Count students at Grade Level per school (from raw counts)."""
+    clean = _clean_raw_to_numeric(raw_df)
+    return clean[_GL_COLS].sum(axis=1)
 
 
 def _assign_band(p):
@@ -152,6 +171,19 @@ def main():
     assessed = get_total_assessed("2025-26", "EoSY")
     df["assessed_count"] = assessed.reindex(df.index)
 
+    # Net gain columns: Trans+ and GL (net change BoSY→EoSY per school year)
+    for sy, sy_label in [("2024-25", "2024_25"), ("2025-26", "2025_26")]:
+        bosy_key = (sy, "BoSY")
+        eosy_key = (sy, "EoSY")
+        if bosy_key in df_all and eosy_key in df_all:
+            tp_bosy = _count_trans_plus(df_all[bosy_key]).reindex(df.index)
+            tp_eosy = _count_trans_plus(df_all[eosy_key]).reindex(df.index)
+            df[f"net_gain_trans_plus_{sy_label}"] = tp_eosy - tp_bosy
+
+            gl_bosy = _count_gl(df_all[bosy_key]).reindex(df.index)
+            gl_eosy = _count_gl(df_all[eosy_key]).reindex(df.index)
+            df[f"net_gain_gl_{sy_label}"] = gl_eosy - gl_bosy
+
     # Capacity Gap: LGU SEF per capita
     df["psgc_muni_code"] = xw["psgc_muni_code"].reindex(df.index)
 
@@ -215,6 +247,8 @@ def main():
         "priority_pctile", "priority_band",
         "need_pctile", "impact_pctile", "capacity_gap_pctile",
         "mean_end", "delta_mean_2024_25", "delta_mean_2025_26",
+        "net_gain_trans_plus_2024_25", "net_gain_trans_plus_2025_26",
+        "net_gain_gl_2024_25", "net_gain_gl_2025_26",
         "assessed_count", "lgu_name", "sef_per_capita",
     ]
     out_labels = [
@@ -222,6 +256,8 @@ def main():
         "Priority Pctile", "Priority Band",
         "Need Pctile", "Impact Pctile", "Capacity Gap Pctile",
         "Mean Ordinal (EoSY 2025-26)", "Delta Mean (SY 2024-25)", "Delta Mean (SY 2025-26)",
+        "Net Gain Trans+ (SY 2024-25)", "Net Gain Trans+ (SY 2025-26)",
+        "Net Gain GL (SY 2024-25)", "Net Gain GL (SY 2025-26)",
         "Assessed Learners", "LGU Name", "SEF per Capita",
     ]
 
@@ -260,6 +296,19 @@ def main():
     ref["Mean Ordinal (EoSY 2025-26)"] = progress_df.get("perf_EoSY_2025-26")
     ref["Delta Mean (SY 2024-25)"] = progress_df.get(delta_col_1)
     ref["Delta Mean (SY 2025-26)"] = progress_df.get(delta_col_4)
+
+    # Net gain columns for reference sheet
+    for sy, sy_label in [("2024-25", "2024-25"), ("2025-26", "2025-26")]:
+        bosy_key = (sy, "BoSY")
+        eosy_key = (sy, "EoSY")
+        if bosy_key in df_all and eosy_key in df_all:
+            tp_bosy = _count_trans_plus(df_all[bosy_key]).reindex(ref.index)
+            tp_eosy = _count_trans_plus(df_all[eosy_key]).reindex(ref.index)
+            ref[f"Net Gain Trans+ (SY {sy_label})"] = tp_eosy - tp_bosy
+
+            gl_bosy = _count_gl(df_all[bosy_key]).reindex(ref.index)
+            gl_eosy = _count_gl(df_all[eosy_key]).reindex(ref.index)
+            ref[f"Net Gain GL (SY {sy_label})"] = gl_eosy - gl_bosy
 
     reasons = []
     for sid in progress_df.index:
@@ -323,6 +372,10 @@ def main():
             ("Mean Ordinal (EoSY 2025-26)", "Average proficiency level (1=Lower Emergent, 5=Grade Level)."),
             ("Delta Mean (SY 2024-25)", "Change in ordinal mean from BoSY to EoSY 2024-25. Positive = improvement."),
             ("Delta Mean (SY 2025-26)", "Change in ordinal mean from BoSY to EoSY 2025-26. Positive = improvement."),
+            ("Net Gain Trans+ (SY 2024-25)", "Net change in students at Transitioning or Grade Level from BoSY to EoSY 2024-25. Positive = more students reached Trans+."),
+            ("Net Gain Trans+ (SY 2025-26)", "Net change in students at Transitioning or Grade Level from BoSY to EoSY 2025-26. Positive = more students reached Trans+."),
+            ("Net Gain GL (SY 2024-25)", "Net change in students at Grade Level from BoSY to EoSY 2024-25. Positive = more students reading at grade level."),
+            ("Net Gain GL (SY 2025-26)", "Net change in students at Grade Level from BoSY to EoSY 2025-26. Positive = more students reading at grade level."),
             ("Assessed Learners", "Total assessed students at EoSY 2025-26."),
             ("LGU Name", "Local Government Unit matched via PSGC crosswalk."),
             ("SEF per Capita", "LGU Special Education Fund ÷ total enrolled learners (PHP). Lower = less local funding."),
