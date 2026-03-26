@@ -242,43 +242,8 @@ def main():
     print(f"\n1st cycle schools in ranking: {n_fc_ranked} of {len(first_cycle_ids)}")
 
     # ── Build output sheets ──────────────────────────────────────────────
-    out_cols = [
-        "school_name", "division", "region", "province", "municipality",
-        "priority_pctile", "priority_band",
-        "need_pctile", "impact_pctile", "capacity_gap_pctile",
-        "mean_end", "delta_mean_2024_25", "delta_mean_2025_26",
-        "net_gain_trans_plus_2024_25", "net_gain_trans_plus_2025_26",
-        "net_gain_gl_2024_25", "net_gain_gl_2025_26",
-        "assessed_count", "lgu_name", "sef_per_capita",
-    ]
-    out_labels = [
-        "School Name", "Division", "Region", "Province", "Municipality",
-        "Priority Pctile", "Priority Band",
-        "Need Pctile", "Impact Pctile", "Capacity Gap Pctile",
-        "Mean Ordinal (EoSY 2025-26)", "Delta Mean (SY 2024-25)", "Delta Mean (SY 2025-26)",
-        "Net Gain Trans+ (SY 2024-25)", "Net Gain Trans+ (SY 2025-26)",
-        "Net Gain GL (SY 2024-25)", "Net Gain GL (SY 2025-26)",
-        "Assessed Learners", "LGU Name", "SEF per Capita",
-    ]
 
-    # Sheet 1: All Ranked
-    sheet1 = df[out_cols].copy()
-    sheet1.columns = out_labels
-    sheet1.insert(0, "Rank", range(1, len(sheet1) + 1))
-    sheet1.insert(1, "School ID", sheet1.index)
-    sheet1["1st Cycle"] = df["is_first_cycle"].map({True: "Yes", False: ""}).values
-    sheet1 = sheet1.reset_index(drop=True)
-
-    # Sheet 2: Top 100 (excluding 1st cycle)
-    pool = df[~df["is_first_cycle"]]
-    top100 = pool.head(100)
-    sheet2 = top100[out_cols].copy()
-    sheet2.columns = out_labels
-    sheet2.insert(0, "Rank", range(1, 101))
-    sheet2.insert(1, "School ID", top100.index)
-    sheet2 = sheet2.reset_index(drop=True)
-
-    # Sheet 3: All Schools Reference
+    # Sheet 1: All Schools (data sheet)
     ref = pd.DataFrame(index=progress_df.index)
     ref.index.name = "School ID"
     ref["School Name"] = progress_df.get("School Name")
@@ -297,18 +262,48 @@ def main():
     ref["Delta Mean (SY 2024-25)"] = progress_df.get(delta_col_1)
     ref["Delta Mean (SY 2025-26)"] = progress_df.get(delta_col_4)
 
-    # Net gain columns for reference sheet
+    # Assessed counts and net gain columns for reference sheet
     for sy, sy_label in [("2024-25", "2024-25"), ("2025-26", "2025-26")]:
         bosy_key = (sy, "BoSY")
         eosy_key = (sy, "EoSY")
         if bosy_key in df_all and eosy_key in df_all:
+            # Raw assessed counts at both endpoints
+            bosy_assessed = get_total_assessed(sy, "BoSY").reindex(ref.index)
+            eosy_assessed = get_total_assessed(sy, "EoSY").reindex(ref.index)
+            ref[f"Assessed (BoSY {sy_label})"] = bosy_assessed
+            ref[f"Assessed (EoSY {sy_label})"] = eosy_assessed
+
+            # Net gain (assessment-level: counts across all language groups per grade)
             tp_bosy = _count_trans_plus(df_all[bosy_key]).reindex(ref.index)
             tp_eosy = _count_trans_plus(df_all[eosy_key]).reindex(ref.index)
-            ref[f"Net Gain Trans+ (SY {sy_label})"] = tp_eosy - tp_bosy
+            ref[f"Net Gain Trans+ Assessments (SY {sy_label})"] = tp_eosy - tp_bosy
 
             gl_bosy = _count_gl(df_all[bosy_key]).reindex(ref.index)
             gl_eosy = _count_gl(df_all[eosy_key]).reindex(ref.index)
-            ref[f"Net Gain GL (SY {sy_label})"] = gl_eosy - gl_bosy
+            ref[f"Net Gain GL Assessments (SY {sy_label})"] = gl_eosy - gl_bosy
+
+    # SEF per capita for reference sheet
+    ref["psgc_muni_code"] = xw["psgc_muni_code"].reindex(ref.index)
+    lgu = matched_lgu_df[["psgc_muni_code", "lgu_name", "rpt_special_education_fund"]].drop_duplicates(
+        subset=["psgc_muni_code"]
+    )
+    code_to_sef = lgu.set_index("psgc_muni_code")["rpt_special_education_fund"]
+    code_to_name = lgu.set_index("psgc_muni_code")["lgu_name"]
+    ref["LGU Name"] = ref["psgc_muni_code"].map(code_to_name)
+    ref_lgu_sef = ref["psgc_muni_code"].map(code_to_sef)
+    enr_xw = enroll[["school_id", "total_enrolled"]].merge(
+        xw[["psgc_muni_code"]].reset_index(),
+        left_on="school_id", right_on="School ID", how="inner",
+    )
+    lgu_enrolled = enr_xw.groupby("psgc_muni_code")["total_enrolled"].sum()
+    ref_lgu_enrolled = ref["psgc_muni_code"].map(lgu_enrolled)
+    ref["SEF per Capita"] = ref_lgu_sef / ref_lgu_enrolled
+    ref = ref.drop(columns=["psgc_muni_code"])
+
+    # Detailed exclusion reasons from validation flags
+    validation = results["validation"]
+    count_stable_col_1 = f"seg{seg1_n}_count_stable"
+    count_stable_col_4 = f"seg{seg4_n}_count_stable"
 
     reasons = []
     for sid in progress_df.index:
@@ -316,12 +311,52 @@ def main():
         v4 = progress_df.at[sid, strict_col_4]
         if v1 and v4:
             reasons.append("")
-        elif not v1 and not v4:
-            reasons.append("Failed strict validation in both school years")
-        elif not v1:
-            reasons.append("Failed strict validation in SY 2024-25")
-        else:
-            reasons.append("Failed strict validation in SY 2025-26")
+            continue
+
+        parts = []
+        for sy, strict_flag, count_col in [
+            ("SY 2024-25", strict_col_1, count_stable_col_1),
+            ("SY 2025-26", strict_col_4, count_stable_col_4),
+        ]:
+            if progress_df.at[sid, strict_flag]:
+                continue  # this SY is fine
+
+            sy_key_bosy = (sy.replace("SY ", ""), "BoSY")
+            sy_key_eosy = (sy.replace("SY ", ""), "EoSY")
+            sub = []
+
+            # Check each endpoint's validation
+            for tp_key, tp_label in [(sy_key_bosy, "BoSY"), (sy_key_eosy, "EoSY")]:
+                if tp_key not in validation:
+                    sub.append(f"no {tp_label} data")
+                    continue
+                val = validation[tp_key]
+                if sid not in val.index:
+                    sub.append(f"not in {tp_label} dataset")
+                    continue
+                if not val.at[sid, "valid"]:
+                    sub.append(f"no valid groups at {tp_label}")
+                    continue
+                if not val.at[sid, "has_all_grades"]:
+                    sub.append(f"missing grade level(s) at {tp_label}")
+                if val.at[sid, "groups_available"] < 4:
+                    sub.append(f"only {int(val.at[sid, 'groups_available'])} groups at {tp_label}")
+                mga = val.at[sid, "min_group_assessed"]
+                if pd.notna(mga) and mga < 15:
+                    sub.append(f"min {int(mga)} assessed/group at {tp_label}")
+
+            # Count stability
+            if count_col in progress_df.columns:
+                if not progress_df.at[sid, count_col]:
+                    if not any("no " in s or "not in" in s for s in sub):
+                        sub.append("unstable count (>25% change)")
+
+            if sub:
+                parts.append(f"{sy}: {'; '.join(sub)}")
+            else:
+                parts.append(f"{sy}: failed strict validation")
+
+        reasons.append(" | ".join(parts))
     ref["Exclusion Reason"] = reasons
     ref = ref.reset_index()
     ref = ref.sort_values(["Valid for Composite", "1st Cycle", "School Name"], ascending=[False, False, True])
@@ -332,27 +367,26 @@ def main():
 
     # ── Write Excel ──────────────────────────────────────────────────────
     with pd.ExcelWriter(str(OUTPUT_PATH), engine="openpyxl") as writer:
-        sheet1.to_excel(writer, sheet_name="All Schools (Ranked)", index=False)
-        sheet2.to_excel(writer, sheet_name="Top 100 (Priority Schools)", index=False)
-        ref.to_excel(writer, sheet_name="All Schools (Reference)", index=False)
+        ref.to_excel(writer, sheet_name="All Schools", index=False)
 
         ws = writer.book.create_sheet("Notes")
+        n_valid_composite = (ref["Valid for Composite"] == "Yes").sum()
+        n_excluded = len(ref) - n_valid_composite
         notes = [
             ("Field", "Value"),
             ("Generated", pd.Timestamp.now().strftime("%Y-%m-%d")),
-            ("Ranking Basis", "Composite of two within-school-year Learning segments"),
-            ("Segments Used", "Learning 2024-25 (BoSY→EoSY) + Learning 2025-26 (BoSY→EoSY)"),
-            ("Endpoint", "EoSY 2025-26 (latest available)"),
-            ("Delta Method", "Average of both Learning segment deltas for Need pillar"),
-            ("Total Schools in Dataset", f"{len(progress_df):,}"),
-            ("Valid for Composite Ranking", f"{len(sheet1):,}"),
-            ("Excluded (failed strict validation)", f"{len(ref) - len(sheet1):,}"),
+            ("Data Source", "CRLA dashboard exports (data/raw/dashboard_export/)"),
+            ("School Years", "SY 2024-25 and SY 2025-26 (within-school-year evaluation only)"),
+            ("Total Schools in Dataset", f"{len(ref):,}"),
+            ("Valid for Composite (both SYs)", f"{n_valid_composite:,}"),
+            ("Valid SY 2024-25 only", f"{((ref['Valid SY 2024-25'] == 'Yes') & (ref['Valid SY 2025-26'] == 'No')).sum():,}"),
+            ("Valid SY 2025-26 only", f"{((ref['Valid SY 2024-25'] == 'No') & (ref['Valid SY 2025-26'] == 'Yes')).sum():,}"),
+            ("Failed both SYs", f"{((ref['Valid SY 2024-25'] == 'No') & (ref['Valid SY 2025-26'] == 'No')).sum():,}"),
             ("", ""),
             ("1ST CYCLE SCHOOLS", ""),
             ("Source", "output/bbi_annex_b_school_ids.txt (131 unique School IDs)"),
-            ("In Sheet 1 (All Ranked)", f"{n_fc_ranked} of 131 pass composite validation — tagged with '1st Cycle = Yes'"),
-            ("In Sheet 2 (Top 100)", "Excluded — Top 100 draws only from schools NOT in the 1st cycle list"),
-            ("In Sheet 3 (Reference)", f"All 131 included with '1st Cycle = Yes' tag, filterable"),
+            ("Tagged in data sheet", f"{n_fc_in_ref} of 131 — '1st Cycle = Yes', filterable"),
+            ("Of which valid for composite", f"{n_fc_valid} of 131"),
             ("", ""),
             ("VALIDITY CRITERIA", ""),
             ("Criterion", "Requirement"),
@@ -360,35 +394,32 @@ def main():
             ("Group Breadth", "At least 4 of 6 grade-language groups must be reporting"),
             ("Minimum Sample", "At least 15 assessed learners in every reporting group"),
             ("Count Stability", "Total assessed count must not change by more than 25% between BoSY and EoSY"),
-            ("Both Years Required", "School must pass ALL above criteria in BOTH SY 2024-25 AND SY 2025-26"),
+            ("Per-SY Validity", "School must pass ALL above criteria at BOTH endpoints (BoSY and EoSY) of a school year"),
+            ("Composite Validity", "School must be valid in BOTH SY 2024-25 AND SY 2025-26"),
             ("", ""),
             ("COLUMN DEFINITIONS", ""),
             ("Column", "Interpretation"),
-            ("Priority Pctile", "Product of Need × Impact × Capacity Gap percentile ranks. Higher = more urgent."),
-            ("Priority Band", "90th+ / 70–90th / 50–70th / Below 50th based on Priority Pctile."),
-            ("Need Pctile", "Weighted z-score of proficiency level, trajectory (avg of both years), inequality, and distribution shape. Higher = worse outcomes."),
-            ("Impact Pctile", "Based on assessed learner count at EoSY 2025-26. Higher = more students affected."),
-            ("Capacity Gap Pctile", "Inverse SEF per capita. Higher = more resource-constrained LGU."),
-            ("Mean Ordinal (EoSY 2025-26)", "Average proficiency level (1=Lower Emergent, 5=Grade Level)."),
-            ("Delta Mean (SY 2024-25)", "Change in ordinal mean from BoSY to EoSY 2024-25. Positive = improvement."),
-            ("Delta Mean (SY 2025-26)", "Change in ordinal mean from BoSY to EoSY 2025-26. Positive = improvement."),
-            ("Net Gain Trans+ (SY 2024-25)", "Net change in students at Transitioning or Grade Level from BoSY to EoSY 2024-25. Positive = more students reached Trans+."),
-            ("Net Gain Trans+ (SY 2025-26)", "Net change in students at Transitioning or Grade Level from BoSY to EoSY 2025-26. Positive = more students reached Trans+."),
-            ("Net Gain GL (SY 2024-25)", "Net change in students at Grade Level from BoSY to EoSY 2024-25. Positive = more students reading at grade level."),
-            ("Net Gain GL (SY 2025-26)", "Net change in students at Grade Level from BoSY to EoSY 2025-26. Positive = more students reading at grade level."),
-            ("Assessed Learners", "Total assessed students at EoSY 2025-26."),
+            ("Valid SY 2024-25 / 2025-26", "Yes if school passes strict validation for that school year's Learning segment."),
+            ("Valid for Composite", "Yes only if BOTH school years pass."),
+            ("1st Cycle", "Yes if school is in the original 131-school list submitted to stakeholders."),
+            ("Mean Ordinal (EoSY YYYY)", "Average proficiency level at end of school year (1=Lower Emergent, 5=Grade Level)."),
+            ("Delta Mean (SY YYYY)", "Change in ordinal mean from BoSY to EoSY. Positive = improvement."),
+            ("Assessed (BoSY/EoSY YYYY)", "Unique assessed students at that endpoint (from dashboard Total Assessed). Compare BoSY vs EoSY to judge count stability."),
+            ("Net Gain Trans+ Assessments", "Net change in Trans+ assessment results (across all language groups) from BoSY to EoSY. Counts assessments, not unique students — one student assessed in multiple languages contributes multiple counts. Use for relative comparison between schools."),
+            ("Net Gain GL Assessments", "Net change in Grade Level assessment results (across all language groups) from BoSY to EoSY. Same assessment-level counting as Trans+. Use for relative comparison between schools."),
             ("LGU Name", "Local Government Unit matched via PSGC crosswalk."),
             ("SEF per Capita", "LGU Special Education Fund ÷ total enrolled learners (PHP). Lower = less local funding."),
-            ("Province", "Province from the DepEd PSGC database."),
-            ("Municipality", "Municipality or city from the DepEd PSGC database."),
-            ("1st Cycle", "Yes if school is in the original 131-school list submitted to stakeholders."),
+            ("Province / Municipality", "From the DepEd PSGC database."),
+            ("Exclusion Reason", "Specific validation failure(s) per school year. Format: 'SY YYYY: reason1; reason2 | SY YYYY: reason'. Blank if valid."),
             ("", ""),
-            ("REFERENCE SHEET COLUMNS", ""),
-            ("Column", "Interpretation"),
-            ("Valid SY 2024-25", "Yes if school passes strict validation for the Learning 2024-25 segment."),
-            ("Valid SY 2025-26", "Yes if school passes strict validation for the Learning 2025-26 segment."),
-            ("Valid for Composite", "Yes only if BOTH school years pass. These schools appear in Sheet 1."),
-            ("Exclusion Reason", "Why the school is not in the composite ranking (blank if valid)."),
+            ("EXCLUSION REASON SUB-TAGS", ""),
+            ("Sub-tag", "Meaning"),
+            ("missing grade level(s)", "School did not assess all three grade levels (G1, G2, G3) at that endpoint"),
+            ("only N groups", "Fewer than 4 of 6 grade-language groups reported data at that endpoint"),
+            ("min N assessed/group", "At least one reporting group had fewer than 15 assessed learners at that endpoint"),
+            ("unstable count (>25% change)", "Total assessed count changed by more than 25% between BoSY and EoSY"),
+            ("no valid groups", "No grade-language group had any usable data at that endpoint"),
+            ("not in dataset / no data", "School was not present in the CRLA data for that endpoint"),
         ]
         for r, (field, value) in enumerate(notes, 1):
             c1 = ws.cell(row=r, column=1, value=field)
@@ -396,18 +427,17 @@ def main():
             c1.font = Font(bold=True)
             c2.alignment = Alignment(wrap_text=True)
         # Bold section headers
-        for row_idx in [1, 11, 17, 18, 25, 26, 41, 42]:
+        section_rows = [1, 11, 16, 17, 25, 26, 40, 41]
+        for row_idx in section_rows:
             if row_idx <= len(notes):
                 for col in (1, 2):
                     ws.cell(row=row_idx, column=col).font = Font(bold=True)
-        ws.column_dimensions["A"].width = 35
-        ws.column_dimensions["B"].width = 95
+        ws.column_dimensions["A"].width = 38
+        ws.column_dimensions["B"].width = 100
 
     print(f"\n✓ Wrote {OUTPUT_PATH}")
-    print(f"  Sheet 1: {len(sheet1)} ranked schools ({n_fc_ranked} tagged 1st Cycle)")
-    print(f"  Sheet 2: {len(sheet2)} top priority schools (1st cycle excluded)")
-    print(f"  Sheet 3: {len(ref)} total schools ({n_fc_in_ref} tagged 1st Cycle)")
-    print(f"  Sheet 4: Notes")
+    print(f"  Sheet 1: {len(ref)} schools ({n_fc_in_ref} tagged 1st Cycle, {n_valid_composite} valid for composite)")
+    print(f"  Sheet 2: Notes")
 
 
 if __name__ == "__main__":

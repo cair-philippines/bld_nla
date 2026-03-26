@@ -306,8 +306,8 @@ MoSY strict rate is 37% because (a) it is an intervention subset and (b) G3 MT d
 
 | Metric | Value |
 |--------|-------|
-| Valid in both years (strict) | 16,959 |
-| Ranked (composite) | 16,900 |
+| Valid in both years (strict) | 18,242 |
+| Ranked (composite) | 18,170 |
 | Output file | `output/priority_ranking_composite.xlsx` |
 
 The composite ranking uses the average of both Learning segment deltas for the Need pillar, EoSY 2025-26 as the proficiency endpoint, and assessed learner count at EoSY 2025-26 for Impact.
@@ -474,7 +474,7 @@ for seg_idx, (t0, t1) in enumerate(_build_segment_pairs()):
 python scripts/build_composite_ranking.py
 ```
 
-This generates `output/priority_ranking_composite.xlsx` — a single Excel file ranking schools based on the composite of both Learning segments. The output contains four sheets: all ranked schools (with 1st-cycle tags, Province, Municipality, and net student gain columns), top 100 priority schools (1st-cycle excluded), a reference sheet of all schools with validity flags, and methodology notes.
+This generates `output/priority_ranking_composite.xlsx` — a single Excel file with two sheets: a data sheet containing all schools with validity flags, assessed counts (unique students), net gain assessment columns, SEF per capita, detailed exclusion reasons, and 1st-cycle tags; plus a Notes sheet with methodology and column definitions.
 
 ### 7.3 Data Access
 

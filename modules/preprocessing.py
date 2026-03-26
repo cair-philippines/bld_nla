@@ -191,6 +191,31 @@ def harmonize_columns(df):
 # File loading
 # ---------------------------------------------------------------------------
 
+def _extract_grade_totals(df, school_year, period):
+    """
+    Extract the dashboard's ``Total Assessed`` column before harmonization
+    drops non-grade columns.
+
+    This column represents unique assessed students per school (not inflated
+    by multiple language groups). Stores the result in ``_grade_totals_cache``.
+    """
+    key = (school_year, period)
+
+    if "Total Assessed" not in df.columns:
+        return  # will fall back to derivation in compute_percentages
+
+    total = df["Total Assessed"].copy()
+    total = pd.to_numeric(
+        total.astype(str).str.replace(",", "", regex=False), errors="coerce"
+    )
+
+    if "School ID" in df.columns:
+        total.index = df["School ID"]
+        total.index.name = "School ID"
+
+    _grade_totals_cache[key] = total
+
+
 def load_assessment_file(path, school_year, period, source="gcs"):
     """
     Load a single CRLA assessment CSV, harmonize its schema, and tag it
@@ -219,6 +244,11 @@ def load_assessment_file(path, school_year, period, source="gcs"):
             df = pd.read_csv(f, low_memory=False)
     else:
         df = pd.read_csv(path, low_memory=False)
+
+    # Extract per-grade Total Assessed before harmonization drops them.
+    # These give the unique student count per grade (not inflated by
+    # multiple language groups).
+    _extract_grade_totals(df, school_year, period)
 
     df = harmonize_columns(df)
     df["school_year"] = school_year
@@ -263,6 +293,7 @@ def load_all_assessments(file_map=None, source="gcs"):
 METADATA_COLUMNS = ["School Name", "Region", "Division", "District"]
 
 _total_assessed_cache = {}
+_grade_totals_cache = {}  # {(sy, period): Series} — unique students from per-grade Totals
 
 
 def _get_group_columns(grade, lang):
@@ -321,10 +352,27 @@ def compute_percentages(df):
     """
     df = _clean_raw_to_numeric(df)
 
-    # Cache total assessed per school (sum of raw counts before percentage conversion)
+    # Cache unique students per school using per-grade Total columns
+    # extracted before harmonization (stored in _grade_totals_cache).
     sy = df["school_year"].iloc[0]
     period = df["period"].iloc[0]
-    _total_assessed_cache[(sy, period)] = df[CANONICAL_GRADE_COLUMNS].sum(axis=1)
+    key = (sy, period)
+
+    if key in _grade_totals_cache:
+        _total_assessed_cache[key] = _grade_totals_cache[key]
+    else:
+        # Fallback: derive from one language group per grade
+        g1 = df[_get_group_columns("G1", None)].sum(axis=1)
+        g2_mt = df[_get_group_columns("G2", "MT")].sum(axis=1)
+        g2_fil = df[_get_group_columns("G2", "Fil")].sum(axis=1)
+        g2 = g2_mt.where(g2_mt > 0, g2_fil)
+        g3_mt = df[_get_group_columns("G3", "MT")].sum(axis=1)
+        g3_fil = df[_get_group_columns("G3", "Fil")].sum(axis=1)
+        g3_eng = df[_get_group_columns("G3", "Eng")].sum(axis=1)
+        g3 = g3_mt.copy()
+        g3 = g3.where(g3 > 0, g3_fil)
+        g3 = g3.where(g3 > 0, g3_eng)
+        _total_assessed_cache[key] = g1.fillna(0) + g2.fillna(0) + g3.fillna(0)
 
     # Compute percentages per grade-language group
     for grade, lang in GRADE_LANGUAGE_GROUPS:
