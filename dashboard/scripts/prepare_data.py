@@ -29,6 +29,7 @@ from preprocessing import (
     CANONICAL_GRADE_COLUMNS,
     METADATA_COLUMNS,
     _get_group_columns,
+    get_total_assessed,
 )
 from analysis import (
     ORDINAL_WEIGHTS,
@@ -228,11 +229,8 @@ def build_ordinal(df_all, percentages, validation):
         pct_df = percentages[key]
         val_df = validation[key]
 
-        # Total assessed per school
-        all_raw = pd.DataFrame({
-            c: _clean_numeric(raw_df[c]) for c in CANONICAL_GRADE_COLUMNS if c in raw_df.columns
-        })
-        total_assessed = all_raw.sum(axis=1)
+        # Total assessed per school (unique students, from cached grade totals)
+        total_assessed = get_total_assessed(sy, period).reindex(pct_df.index)
 
         # Ordinal score and GL% per grade-language group
         group_scores = {}

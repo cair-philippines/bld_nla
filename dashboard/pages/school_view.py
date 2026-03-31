@@ -18,7 +18,7 @@ from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
-TIMEPOINT_ORDER = ["BoSY 2024-25", "EoSY 2024-25", "BoSY 2025-26"]
+TIMEPOINT_ORDER = ["BoSY 2024-25", "EoSY 2024-25", "BoSY 2025-26", "MoSY 2025-26", "EoSY 2025-26"]
 
 PROFILE_COLORS = {
     "Lower Emergent": "#DC143C",

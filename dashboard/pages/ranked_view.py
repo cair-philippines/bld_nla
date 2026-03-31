@@ -20,7 +20,7 @@ from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
-TIMEPOINT_ORDER = ["BoSY 2024-25", "EoSY 2024-25", "BoSY 2025-26"]
+TIMEPOINT_ORDER = ["BoSY 2024-25", "EoSY 2024-25", "BoSY 2025-26", "MoSY 2025-26", "EoSY 2025-26"]
 
 GRADE_LANG_ORDER = ["G1", "G2 MT", "G2 Fil", "G3 MT", "G3 Fil", "G3 Eng"]
 
@@ -111,31 +111,29 @@ ordinal_filtered = ordinal_schools[
 
 st.sidebar.markdown("---")
 
-# Build meaningful timepoint pairs:
-# 1) Consecutive pairs (BoSY→EoSY, EoSY→next BoSY)
-# 2) Same-period year-over-year (BoSY→BoSY, EoSY→EoSY)
-available_tps = [
-    tp for tp in TIMEPOINT_ORDER
-    if tp in ordinal_filtered["timepoint_label"].values
-]
-
-valid_pairs = []
-seen = set()
-for i in range(len(available_tps)):
-    for j in range(i + 1, len(available_tps)):
-        a, b = available_tps[i], available_tps[j]
-        # Parse period from label (e.g., "BoSY 2024-25" → "BoSY")
-        period_a = a.split(" ")[0]
-        period_b = b.split(" ")[0]
-        # Consecutive (adjacent in TIMEPOINT_ORDER)
-        is_consecutive = (j == i + 1)
-        # Same period across years (BoSY→BoSY, EoSY→EoSY)
-        is_year_over_year = (period_a == period_b)
-        if is_consecutive or is_year_over_year:
-            key = (a, b)
-            if key not in seen:
-                valid_pairs.append(key)
-                seen.add(key)
+# Build timepoint pairs from pre-computed priority segments.
+# This ensures only valid, interpretable pairs appear in the dropdown.
+if priority_df is not None:
+    seg_pairs = priority_df[["tp_from", "tp_to"]].drop_duplicates()
+    valid_pairs = [
+        (row["tp_from"], row["tp_to"])
+        for _, row in seg_pairs.iterrows()
+        if row["tp_from"] in ordinal_filtered["timepoint_label"].values
+        and row["tp_to"] in ordinal_filtered["timepoint_label"].values
+    ]
+    # Sort by TIMEPOINT_ORDER position of tp_from, then tp_to
+    tp_order = {tp: i for i, tp in enumerate(TIMEPOINT_ORDER)}
+    valid_pairs.sort(key=lambda p: (tp_order.get(p[0], 99), tp_order.get(p[1], 99)))
+else:
+    # Fallback: consecutive within-year pairs only
+    available_tps = [
+        tp for tp in TIMEPOINT_ORDER
+        if tp in ordinal_filtered["timepoint_label"].values
+    ]
+    valid_pairs = [
+        (available_tps[i], available_tps[i + 1])
+        for i in range(len(available_tps) - 1)
+    ]
 
 if not valid_pairs:
     st.title("School Rankings")

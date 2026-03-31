@@ -54,12 +54,15 @@ SY 2025-26:  BoSY ──── MoSY ──── EoSY
                   └── Learning_2025-26 ──┘
 ```
 
-| Segment Label | Pair | Scope |
-|---------------|------|-------|
-| `Learning_2024-25` | BoSY → EoSY 2024-25 | All schools with data at both endpoints |
-| `Learning_2025-26` | BoSY → EoSY 2025-26 | All schools with data at both endpoints |
-| `BoSYMoSY_2025-26` | BoSY → MoSY 2025-26 | **Intervention subset only** (schools with MoSY data) |
-| `MoSYEoSY_2025-26` | MoSY → EoSY 2025-26 | **Intervention subset only** (schools with MoSY data) |
+| # | Segment Label | Pair | Scope |
+|---|---------------|------|-------|
+| 1 | `Learning_2024-25` | BoSY → EoSY 2024-25 | All schools — SY 2024-25 full year |
+| 2 | `BoSYMoSY_2025-26` | BoSY → MoSY 2025-26 | Intervention subset — early gains |
+| 3 | `MoSYEoSY_2025-26` | MoSY → EoSY 2025-26 | Intervention subset — sustained gains |
+| 4 | `Learning_2025-26` | BoSY → EoSY 2025-26 | All schools — SY 2025-26 full year |
+| 5 | `YoY_BoSY_2024-25_to_2025-26` | BoSY 2024-25 → BoSY 2025-26 | Year-over-year starting point |
+| 6 | `YoY_EoSY_2024-25_to_2025-26` | EoSY 2024-25 → EoSY 2025-26 | Year-over-year endpoint |
+| 7 | `EndToEnd_2024-25_to_2025-26` | BoSY 2024-25 → EoSY 2025-26 | Full observation window |
 
 ### MoSY as Optional Intermediate
 
@@ -118,6 +121,8 @@ The 2nd cycle priority school list will be **regenerated** based on the within-s
 | 2026-03-24 | Updated dashboard export | EoSY 2025-26 +421 schools (38,322→38,743), BoSY 2025-26 +2 (38,981→38,983). +135 composite-ranked schools. National means unchanged. |
 | 2026-03-25 | Net gain columns | Added Net Gain Trans+ and Net Gain GL columns (both SYs) to composite Excel. Net change in student counts at Transitioning+ and Grade Level from BoSY→EoSY. |
 | 2026-03-26 | Assessed count fix | Total assessed now uses unique students (dashboard Total Assessed column) instead of inflated sum of 30 grade-language columns. Net gain columns relabeled as "Assessments" (assessment-level, not unique students). Rate columns removed. Excel restructured to 2 sheets. Ranked: 18,170 (up from 16,900 — count stability check now uses correct unique counts). |
+| 2026-03-26 | 7 segment pairs | Extended `_build_segment_pairs()` to generate 7 logical pairs: 4 within-year + 2 year-over-year (BoSY→BoSY, EoSY→EoSY) + 1 end-to-end (BoSY 2024-25 → EoSY 2025-26). Priority parquet now has 121,463 rows across 7 segments. |
+| 2026-03-26 | Dashboard updates | Updated TIMEPOINT_ORDER to 5 timepoints in both dashboard pages. Ranked view period dropdown now reads valid pairs from priority parquet (7 options). Fixed `build_ordinal` to use unique student counts. |
 
 ## Technical Notes
 

@@ -472,30 +472,44 @@ def _total_assessed(df):
 
 def _segment_label(t0, t1):
     """
-    Generate a human-readable label for a within-school-year pair.
+    Generate a human-readable label for a segment pair.
 
-    BoSY → EoSY (same year)  → ``Learning_2024-25``
-    BoSY → MoSY (same year)  → ``BoSYMoSY_2025-26``
-    MoSY → EoSY (same year)  → ``MoSYEoSY_2025-26``
+    Within-year:
+        BoSY → EoSY (same year)  → ``Learning_2024-25``
+        BoSY → MoSY (same year)  → ``BoSYMoSY_2025-26``
+        MoSY → EoSY (same year)  → ``MoSYEoSY_2025-26``
+    Year-over-year (same period):
+        BoSY → BoSY             → ``YoY_BoSY_2024-25_to_2025-26``
+        EoSY → EoSY             → ``YoY_EoSY_2024-25_to_2025-26``
+    End-to-end:
+        BoSY → EoSY (diff year) → ``EndToEnd_2024-25_to_2025-26``
     """
     sy0, period0 = t0
     sy1, period1 = t1
-    if period0 == "BoSY" and period1 == "EoSY" and sy0 == sy1:
-        return f"Learning_{sy0}"
-    if period0 == "BoSY" and period1 == "MoSY" and sy0 == sy1:
-        return f"BoSYMoSY_{sy0}"
-    if period0 == "MoSY" and period1 == "EoSY" and sy0 == sy1:
-        return f"MoSYEoSY_{sy0}"
+    if sy0 == sy1:
+        if period0 == "BoSY" and period1 == "EoSY":
+            return f"Learning_{sy0}"
+        if period0 == "BoSY" and period1 == "MoSY":
+            return f"BoSYMoSY_{sy0}"
+        if period0 == "MoSY" and period1 == "EoSY":
+            return f"MoSYEoSY_{sy0}"
+    else:
+        if period0 == period1:
+            return f"YoY_{period0}_{sy0}_to_{sy1}"
+        if period0 == "BoSY" and period1 == "EoSY":
+            return f"EndToEnd_{sy0}_to_{sy1}"
     return f"{period0}_{sy0}_to_{period1}_{sy1}"
 
 
 def _build_segment_pairs(school_year_chains=None):
     """
-    Build the list of segment pairs from per-school-year chains.
+    Build the list of all logical segment pairs.
 
-    For each school year, generates:
-    - Consecutive pairs (e.g., BoSY→MoSY, MoSY→EoSY)
-    - A spanning BoSY→EoSY pair if an intermediate timepoint (MoSY) exists
+    Generates:
+    1. Within-year consecutive pairs (BoSY→MoSY, MoSY→EoSY)
+    2. Within-year spanning pairs (BoSY→EoSY when MoSY exists)
+    3. Year-over-year same-period pairs (BoSY→BoSY, EoSY→EoSY)
+    4. End-to-end pair (first BoSY → last EoSY)
 
     Returns
     -------
@@ -507,8 +521,11 @@ def _build_segment_pairs(school_year_chains=None):
         school_year_chains = SCHOOL_YEAR_CHAINS
 
     pairs = []
-    for sy, chain in school_year_chains.items():
-        # Filter to timepoints that are actually in the chain
+    sorted_sys = sorted(school_year_chains.keys())
+
+    # ── Within-year pairs ──
+    for sy in sorted_sys:
+        chain = school_year_chains[sy]
         available = [tp for tp in chain]
         if len(available) < 2:
             continue
@@ -520,9 +537,29 @@ def _build_segment_pairs(school_year_chains=None):
         # Spanning pair: BoSY→EoSY if there's an intermediate (MoSY)
         if len(available) > 2:
             first, last = available[0], available[-1]
-            # Only add if the spanning pair isn't already a consecutive pair
             if (first, last) not in pairs:
                 pairs.append((first, last))
+
+    # ── Cross-year pairs (only if multiple school years) ──
+    if len(sorted_sys) >= 2:
+        # Collect all timepoints by period across school years
+        by_period = {}
+        for sy in sorted_sys:
+            for tp in school_year_chains[sy]:
+                _, period = tp
+                by_period.setdefault(period, []).append(tp)
+
+        # Year-over-year same-period pairs (BoSY→BoSY, EoSY→EoSY)
+        for period in ["BoSY", "EoSY"]:
+            tps = by_period.get(period, [])
+            if len(tps) >= 2:
+                pairs.append((tps[0], tps[-1]))
+
+        # End-to-end: first BoSY → last EoSY
+        first_bosy = by_period.get("BoSY", [None])[0]
+        last_eosy = by_period.get("EoSY", [None])[-1]
+        if first_bosy and last_eosy and first_bosy[0] != last_eosy[0]:
+            pairs.append((first_bosy, last_eosy))
 
     return pairs
 
