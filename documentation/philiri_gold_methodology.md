@@ -180,10 +180,12 @@ Unlike CRLA — where both BoSY and EoSY assess all students — PhilIRI EoSY on
 The appropriate check is:
 
 ```
-EoSY Assessed ≤ 1.10 × BoSY (Frustration + Instructional students)
+EoSY Assessed ≤ 1.10 × BoSY non-Grade-Ready students
 ```
 
-A school where EoSY Assessed exceeds 110% of the BoSY-eligible population has more students re-assessed than were originally found to be struggling — which is inconsistent with the assessment design and likely indicates a data entry error.
+"Non-Grade-Ready" is defined as all students who underwent the Graded Passages individual test at BoSY (i.e., all 2LD and 3LD students: Frustration, Instructional, and Independent at those levels). This is the maximum theoretical pool eligible for EoSY re-assessment. It is used instead of the narrower "F+I only" ceiling because in practice it is a more robust bound: students recorded as Independent at BoSY may have been placed in re-assessment at some schools, and the wider ceiling avoids false positives from minor data inconsistencies.
+
+A school where EoSY Assessed exceeds 110% of the BoSY non-Grade-Ready count has more students re-assessed than ever took the individual BoSY test — which is inconsistent with the assessment design and likely indicates a data entry error.
 
 ### 4.2 Year-over-Year Count Stability (`count_stable`)
 

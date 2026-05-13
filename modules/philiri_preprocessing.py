@@ -119,12 +119,12 @@ KS3_EOSY_COLUMNS_PER_LANG = _eosy_columns_ks3(KS3_GRADES, per_lang_assessed=True
 # Filename pattern: one file per (ks, sy, period).
 # Files use non-breaking spaces (U+00A0) — always use glob to discover.
 _BRONZE_FILE_HINTS = {
-    ("ks2", "2024-25", "BoSY"): "*Elementary*BoSY*",
-    ("ks2", "2024-25", "EoSY"): "*Elementary*EoSY*",
+    ("ks2", "2024-25", "BoSY"): "*Archive*Elementary*BoSY*",
+    ("ks2", "2024-25", "EoSY"): "*Archive*Elementary*EoSY*",
     ("ks2", "2025-26", "BoSY"): "*KS2*BoSY*",
     ("ks2", "2025-26", "EoSY"): "*KS2*EoSY*",
-    ("ks3", "2024-25", "BoSY"): "*Secondary*BoSY*",
-    ("ks3", "2024-25", "EoSY"): "*Secondary*EoSY*",
+    ("ks3", "2024-25", "BoSY"): "*Archive*Secondary*BoSY*",
+    ("ks3", "2024-25", "EoSY"): "*Archive*Secondary*EoSY*",
     ("ks3", "2025-26", "BoSY"): "*KS3*BoSY*",
     ("ks3", "2025-26", "EoSY"): "*KS3*EoSY*",
 }
@@ -346,3 +346,227 @@ def write_silver_philiri(file_map=None, output_dir=None):
         written.append(out_path)
 
     return written
+
+
+# ---------------------------------------------------------------------------
+# Grade-language groups
+# ---------------------------------------------------------------------------
+
+PHILIRI_GRADES_BY_KS = {
+    "ks2": KS2_GRADES,
+    "ks3": KS3_GRADES,
+}
+
+
+def get_philiri_groups(ks):
+    """Return ordered list of (grade, lang) tuples for a key stage."""
+    return [(g, lang) for g in PHILIRI_GRADES_BY_KS[ks] for lang in LANGUAGES]
+
+
+# ---------------------------------------------------------------------------
+# Raw count helpers (per grade-language group)
+# ---------------------------------------------------------------------------
+
+def _philiri_group_counts_bosy(raw_df, grade, lang):
+    """
+    Return (frustration, instructional, independent) collapsed raw count
+    Series for a BoSY grade-language group.
+
+    Collapse:
+        Independent  = Grade Ready + 2LD Independent
+        Instructional = 2LD Instructional + 3LD Independent
+        Frustration  = 2LD Frustration + 3LD Instructional + 3LD Frustration
+    """
+    def _get(col):
+        return (
+            raw_df[col].fillna(0) if col in raw_df.columns
+            else pd.Series(0.0, index=raw_df.index)
+        )
+
+    independent = (
+        _get(f"{grade} {lang} Grade Ready")
+        + _get(f"{grade} 2LD {lang} Independent")
+    )
+    instructional = (
+        _get(f"{grade} 2LD {lang} Instructional")
+        + _get(f"{grade} 3LD {lang} Independent")
+    )
+    frustration = (
+        _get(f"{grade} 2LD {lang} Frustration")
+        + _get(f"{grade} 3LD {lang} Instructional")
+        + _get(f"{grade} 3LD {lang} Frustration")
+    )
+    return frustration, instructional, independent
+
+
+def _philiri_group_counts_eosy(raw_df, grade, lang):
+    """
+    Return (frustration, instructional, independent) raw count Series for
+    an EoSY grade-language group.
+    """
+    def _get(col):
+        return (
+            raw_df[col].fillna(0) if col in raw_df.columns
+            else pd.Series(0.0, index=raw_df.index)
+        )
+
+    return (
+        _get(f"{grade} {lang} Frustration"),
+        _get(f"{grade} {lang} Instructional"),
+        _get(f"{grade} {lang} Independent"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Percentage computation
+# ---------------------------------------------------------------------------
+
+def compute_philiri_percentages(raw_df, ks, period):
+    """
+    Compute 3-level collapsed percentages from a PhilIRI silver DataFrame.
+
+    BoSY collapse:
+        Independent  = Grade Ready + 2LD Independent
+        Instructional = 2LD Instructional + 3LD Independent
+        Frustration  = 2LD Frustration + 3LD Instructional + 3LD Frustration
+
+    EoSY: normalises the three existing EoSY counts directly.
+
+    The denominator is the per-language column sum in all cases (not the
+    combined ``{G} Assessed`` column, which is a combined grade total for
+    KS2 and therefore unsuitable as a per-language denominator).
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns: ``{G} {lang} Frustration``, ``{G} {lang} Instructional``,
+        ``{G} {lang} Independent`` (0–100 scale).  NaN where denominator
+        is zero (no assessed students in that group).
+    """
+    groups = get_philiri_groups(ks)
+    result = {}
+
+    for grade, lang in groups:
+        if period == "BoSY":
+            frust, inst, indep = _philiri_group_counts_bosy(raw_df, grade, lang)
+        else:
+            frust, inst, indep = _philiri_group_counts_eosy(raw_df, grade, lang)
+
+        denom = (frust + inst + indep).replace(0, np.nan)
+        result[f"{grade} {lang} Frustration"] = frust / denom * 100
+        result[f"{grade} {lang} Instructional"] = inst / denom * 100
+        result[f"{grade} {lang} Independent"] = indep / denom * 100
+
+    return pd.DataFrame(result, index=raw_df.index)
+
+
+def compute_philiri_percentages_7level(raw_df, ks):
+    """
+    Compute 7-level BoSY percentages without collapse.
+
+    Ordinal order (1 = worst → 7 = best):
+        1: 3LD Frustration, 2: 3LD Instructional, 3: 3LD Independent,
+        4: 2LD Frustration, 5: 2LD Instructional, 6: 2LD Independent,
+        7: Grade Ready
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns: ``{G} {lang} 3LD Frustration`` … ``{G} {lang} Grade Ready``
+        (0–100 scale).  NaN where denominator is zero.
+    """
+    groups = get_philiri_groups(ks)
+    level_labels = [
+        "3LD Frustration", "3LD Instructional", "3LD Independent",
+        "2LD Frustration", "2LD Instructional", "2LD Independent",
+        "Grade Ready",
+    ]
+    result = {}
+
+    for grade, lang in groups:
+        raw_cols = [
+            f"{grade} 3LD {lang} Frustration",
+            f"{grade} 3LD {lang} Instructional",
+            f"{grade} 3LD {lang} Independent",
+            f"{grade} 2LD {lang} Frustration",
+            f"{grade} 2LD {lang} Instructional",
+            f"{grade} 2LD {lang} Independent",
+            f"{grade} {lang} Grade Ready",
+        ]
+        counts = [
+            raw_df[c].fillna(0) if c in raw_df.columns
+            else pd.Series(0.0, index=raw_df.index)
+            for c in raw_cols
+        ]
+        denom = sum(counts).replace(0, np.nan)
+        for label, count in zip(level_labels, counts):
+            result[f"{grade} {lang} {label}"] = count / denom * 100
+
+    return pd.DataFrame(result, index=raw_df.index)
+
+
+# ---------------------------------------------------------------------------
+# Validation
+# ---------------------------------------------------------------------------
+
+def validate_philiri(pct3_df, raw_df, ks, period):
+    """
+    Compute validity flags for a single PhilIRI timepoint.
+
+    ``valid``       — at least one grade-language group has data.
+    ``valid_strict`` — all grades present + ≥ 4 groups + ≥ 15 assessed per group.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns: ``valid``, ``valid_strict``, ``groups_available``,
+        ``min_group_assessed``, ``has_all_grades``.
+    """
+    grades = PHILIRI_GRADES_BY_KS[ks]
+    groups = get_philiri_groups(ks)
+    index = pct3_df.index
+
+    groups_available = pd.Series(0, index=index, dtype=int)
+    min_assessed = pd.Series(np.inf, index=index, dtype=float)
+    grade_has_data = {g: pd.Series(False, index=index) for g in grades}
+
+    for grade, lang in groups:
+        cols = [
+            f"{grade} {lang} Frustration",
+            f"{grade} {lang} Instructional",
+            f"{grade} {lang} Independent",
+        ]
+        if not all(c in pct3_df.columns for c in cols):
+            continue
+        has_group = pct3_df[cols].notna().all(axis=1)
+
+        # Assessed count = denominator = sum of raw level columns
+        if period == "BoSY":
+            frust, inst, indep = _philiri_group_counts_bosy(raw_df, grade, lang)
+        else:
+            frust, inst, indep = _philiri_group_counts_eosy(raw_df, grade, lang)
+        assessed = (frust + inst + indep).where(has_group, other=np.nan)
+
+        groups_available += has_group.astype(int)
+        min_assessed = pd.concat([min_assessed, assessed], axis=1).min(axis=1)
+        grade_has_data[grade] = grade_has_data[grade] | has_group
+
+    min_assessed = min_assessed.replace(np.inf, np.nan)
+    has_all_grades = pd.concat(
+        list(grade_has_data.values()), axis=1
+    ).all(axis=1)
+
+    valid = groups_available > 0
+    valid_strict = (
+        has_all_grades
+        & (groups_available >= 4)
+        & (min_assessed >= 15)
+    )
+
+    return pd.DataFrame({
+        "valid": valid,
+        "valid_strict": valid_strict,
+        "groups_available": groups_available,
+        "min_group_assessed": min_assessed,
+        "has_all_grades": has_all_grades,
+    })
