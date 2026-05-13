@@ -58,6 +58,9 @@ CRLA_RAW_FILES = {
 # Files follow the naming convention: CRLA_{period}_{school_year}_{timestamp}.csv
 DASHBOARD_EXPORT_DIR = "data/bronze/crla"
 
+# Silver layer — harmonized, typed parquets (one per timepoint).
+SILVER_CRLA_DIR = "data/silver/crla"
+
 
 def resolve_latest_exports(export_dir=None):
     """
@@ -471,6 +474,42 @@ def validate_timepoint(pct_df, raw_counts_df=None):
 # ---------------------------------------------------------------------------
 # Cached total assessed
 # ---------------------------------------------------------------------------
+
+def write_silver_crla(df_all, output_dir=None):
+    """
+    Write harmonized CRLA data to the silver layer.
+
+    Produces one parquet per timepoint containing harmonized numeric raw
+    counts, metadata, and total_assessed (unique students from the
+    dashboard Total Assessed column).  Call after ``load_all_assessments``
+    so that ``_grade_totals_cache`` is populated.
+
+    Parameters
+    ----------
+    df_all : dict
+        ``{(school_year, period): DataFrame}`` from
+        ``load_all_assessments()``.
+    output_dir : str, optional
+        Destination directory.  Defaults to ``SILVER_CRLA_DIR``.
+    """
+    import pathlib
+
+    if output_dir is None:
+        output_dir = SILVER_CRLA_DIR
+
+    out = pathlib.Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    for (sy, period), df in df_all.items():
+        clean = _clean_raw_to_numeric(df)
+        key = (sy, period)
+        if key in _grade_totals_cache:
+            clean = clean.copy()
+            clean["total_assessed"] = _grade_totals_cache[key].reindex(clean.index)
+        out_path = out / f"{sy}_{period}.parquet"
+        clean.to_parquet(out_path)
+        print(f"  → {out_path} ({len(clean)} schools)")
+
 
 def get_total_assessed(school_year, period):
     """

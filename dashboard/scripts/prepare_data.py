@@ -50,6 +50,9 @@ from lgu_matching import (
 )
 from priority_ranking import compute_priority_ranking
 
+GOLD_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "gold"
+GOLD_TIMEPOINTS = GOLD_DIR / "crla_school_timepoints.parquet"
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
@@ -91,8 +94,38 @@ def _timepoint_label(sy, period):
 # Build school_metadata
 # ---------------------------------------------------------------------------
 
-def build_metadata(df_all):
-    """One row per school with metadata and available timepoints."""
+def build_metadata(df_all=None):
+    """One row per school with metadata and available timepoints.
+
+    Reads from the gold crla_school_timepoints.parquet when available
+    (fast).  Falls back to scanning df_all if gold is not present.
+    """
+    if GOLD_TIMEPOINTS.exists():
+        gold = pd.read_parquet(GOLD_TIMEPOINTS)
+        rows = {}
+        for _, row in gold.iterrows():
+            sid = row["School ID"]
+            label = row["timepoint_label"]
+            if sid not in rows:
+                rows[sid] = {
+                    "School ID": sid,
+                    "School Name": row.get("School Name", np.nan),
+                    "Region": row.get("Region", np.nan),
+                    "Division": row.get("Division", np.nan),
+                    "District": row.get("District", np.nan),
+                    "_timepoints": [],
+                }
+            rows[sid]["_timepoints"].append(label)
+            for col in METADATA_COLUMNS:
+                if pd.isna(rows[sid].get(col)) and not pd.isna(row.get(col)):
+                    rows[sid][col] = row[col]
+        result = pd.DataFrame(rows.values())
+        result["timepoints_available"] = result["_timepoints"].apply(
+            lambda x: ", ".join(x)
+        )
+        return result.drop(columns=["_timepoints"])
+
+    # Fallback: scan bronze data
     rows = {}
     for key in TIMEPOINT_ORDER:
         if key not in df_all:
@@ -123,7 +156,6 @@ def build_metadata(df_all):
                     "_timepoints": [],
                 }
             rows[sid]["_timepoints"].append(label)
-            # Fill missing metadata from later timepoints
             for col in METADATA_COLUMNS:
                 if pd.isna(rows[sid].get(col)) and col in src.columns:
                     rows[sid][col] = src.at[sid, col]
@@ -132,8 +164,7 @@ def build_metadata(df_all):
     result["timepoints_available"] = result["_timepoints"].apply(
         lambda x: ", ".join(x)
     )
-    result = result.drop(columns=["_timepoints"])
-    return result
+    return result.drop(columns=["_timepoints"])
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +228,59 @@ def build_profiles(df_all, percentages):
 # ---------------------------------------------------------------------------
 # Build school_ordinal
 # ---------------------------------------------------------------------------
+
+def build_ordinal_from_gold():
+    """Read school_ordinal from the gold timepoints parquet (fast path)."""
+    gold = pd.read_parquet(GOLD_TIMEPOINTS)
+    records = []
+    for _, row in gold.iterrows():
+        rec = {
+            "School ID": row["School ID"],
+            "school_year": row["school_year"],
+            "period": row["period"],
+            "timepoint_label": row["timepoint_label"],
+            "total_assessed": row.get("total_assessed", np.nan),
+            "ordinal_overall": row.get("ordinal_overall", np.nan),
+            "pct_gl": row.get("pct_gl", np.nan),
+            "ordinal_G1": row.get("ordinal_G1", np.nan),
+            "ordinal_G2": row.get("ordinal_G2", np.nan),
+            "ordinal_G3": row.get("ordinal_G3", np.nan),
+            "valid": row.get("valid", False),
+        }
+        # Per-group ordinal columns
+        for gl_label in GRADE_LANG_LABELS:
+            col = f"ordinal_{gl_label.replace(' ', '_')}"
+            rec[col] = row.get(col, np.nan)
+        records.append(rec)
+
+    df = pd.DataFrame(records)
+
+    # Append national means as synthetic school (School ID = -1)
+    nat_rows = []
+    for label in df["timepoint_label"].unique():
+        tp_data = df[(df["timepoint_label"] == label) & df["valid"]]
+        sy = tp_data["school_year"].iloc[0]
+        period = tp_data["period"].iloc[0]
+        nat = {
+            "School ID": -1,
+            "school_year": sy,
+            "period": period,
+            "timepoint_label": label,
+            "total_assessed": tp_data["total_assessed"].sum(),
+            "ordinal_overall": tp_data["ordinal_overall"].mean(),
+            "pct_gl": tp_data["pct_gl"].mean(),
+            "ordinal_G1": tp_data["ordinal_G1"].mean(),
+            "ordinal_G2": tp_data["ordinal_G2"].mean(),
+            "ordinal_G3": tp_data["ordinal_G3"].mean(),
+            "valid": True,
+        }
+        for gl_label in GRADE_LANG_LABELS:
+            col = f"ordinal_{gl_label.replace(' ', '_')}"
+            nat[col] = tp_data[col].mean()
+        nat_rows.append(nat)
+
+    return pd.concat([df, pd.DataFrame(nat_rows)], ignore_index=True)
+
 
 def build_ordinal(df_all, percentages, validation):
     """Ordinal scores per school x timepoint at multiple aggregation levels."""
@@ -381,23 +465,37 @@ def build_priority(df_all):
 # ---------------------------------------------------------------------------
 
 def main():
+    use_gold = GOLD_TIMEPOINTS.exists()
+    if use_gold:
+        print(f"Gold layer found at {GOLD_TIMEPOINTS} — skipping ordinal recomputation.")
+
     print("Loading raw data ...")
     df_all = load_all_assessments(file_map=LOCAL_FILES, source="local")
 
-    print("Computing percentages and validation ...")
     percentages = {}
     validation = {}
-    for key, df in df_all.items():
-        percentages[key] = compute_percentages(df)
-        validation[key] = validate_timepoint(
-            percentages[key],
-            raw_counts_df=_clean_raw_to_numeric(df),
-        )
+    if not use_gold:
+        print("Computing percentages and validation ...")
+        for key, df in df_all.items():
+            percentages[key] = compute_percentages(df)
+            validation[key] = validate_timepoint(
+                percentages[key],
+                raw_counts_df=_clean_raw_to_numeric(df),
+            )
+    else:
+        # Still need percentages for build_profiles and build_priority
+        print("Computing percentages and validation (needed for profiles and priority) ...")
+        for key, df in df_all.items():
+            percentages[key] = compute_percentages(df)
+            validation[key] = validate_timepoint(
+                percentages[key],
+                raw_counts_df=_clean_raw_to_numeric(df),
+            )
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     print("Building school_metadata ...")
-    meta = build_metadata(df_all)
+    meta = build_metadata(df_all if not use_gold else None)
     meta.to_parquet(OUTPUT_DIR / "school_metadata.parquet", index=False)
     print(f"  → {len(meta)} schools")
 
@@ -407,7 +505,10 @@ def main():
     print(f"  → {len(profiles)} rows")
 
     print("Building school_ordinal ...")
-    ordinal = build_ordinal(df_all, percentages, validation)
+    if use_gold:
+        ordinal = build_ordinal_from_gold()
+    else:
+        ordinal = build_ordinal(df_all, percentages, validation)
     ordinal.to_parquet(OUTPUT_DIR / "school_ordinal.parquet", index=False)
     print(f"  → {len(ordinal)} rows")
 

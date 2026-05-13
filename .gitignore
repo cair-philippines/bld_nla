@@ -17,3 +17,6 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# Derived data artifacts (regenerate via build_silver.py / build_gold.py)
+*.parquet

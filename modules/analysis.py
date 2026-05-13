@@ -6,6 +6,7 @@ progress scoring.
 
 import numpy as np
 import pandas as pd
+from scipy.stats import wasserstein_distance
 
 from preprocessing import (
     READING_PROFILES,
@@ -97,21 +98,28 @@ def compute_ordinal_score(pct_df):
 
 def compute_ordinal_moments(pct_df):
     """
-    Compute ordinal proficiency mean, standard deviation, and skewness
-    per school.
+    Compute ordinal proficiency moments (mean, SD, skewness, excess kurtosis,
+    bimodality coefficient) per school.
 
     For each grade-language group with complete data (all 5 profiles
-    non-NaN), computes three moments from the percentage distribution
+    non-NaN), computes five moments from the percentage distribution
     and ordinal weights [1, 2, 3, 4, 5]:
 
-        mean = Σ(pct_i × w_i) / 100
-        var  = Σ(pct_i × (w_i − mean)²) / 100
-        sd   = √var
-        skew = [Σ(pct_i × (w_i − mean)³) / 100] / sd³
+        mean      = Σ(pct_i × w_i) / 100
+        var       = Σ(pct_i × (w_i − mean)²) / 100
+        sd        = √var
+        skew      = [Σ(pct_i × (w_i − mean)³) / 100] / sd³
+        kurt_reg  = [Σ(pct_i × (w_i − mean)⁴) / 100] / sd⁴   (regular kurtosis)
+        kurt      = kurt_reg − 3                                (excess kurtosis)
+        BC        = (skew² + 1) / kurt_reg
+
+    BC (Bimodality Coefficient) > 0.555 is the conventional flag for
+    bimodal character. High BC + low absolute skewness indicates symmetric
+    spread across extremes (bimodal); low BC + high absolute skewness
+    indicates strong unimodal concentration.
 
     School-level values are the mean of each moment across available
-    grade-language groups (identical to how ``compute_ordinal_score``
-    averages the mean).
+    grade-language groups.
 
     Parameters
     ----------
@@ -121,7 +129,8 @@ def compute_ordinal_moments(pct_df):
     Returns
     -------
     pandas.DataFrame
-        Columns: ``ordinal_mean``, ``ordinal_sd``, ``ordinal_skew``.
+        Columns: ``ordinal_mean``, ``ordinal_sd``, ``ordinal_skew``,
+        ``ordinal_kurt`` (excess kurtosis), ``bimodality_coef``.
         ``ordinal_mean`` is identical to ``compute_ordinal_score()`` output.
     """
     w = np.array(list(ORDINAL_WEIGHTS.values()), dtype=float)
@@ -129,6 +138,8 @@ def compute_ordinal_moments(pct_df):
     group_means = []
     group_sds = []
     group_skews = []
+    group_kurts = []
+    group_bcs = []
 
     for grade, lang in GRADE_LANGUAGE_GROUPS:
         cols = _get_group_columns(grade, lang)
@@ -144,25 +155,99 @@ def compute_ordinal_moments(pct_df):
 
         with np.errstate(divide="ignore", invalid="ignore"):
             skew = (pct * dev ** 3).sum(axis=1) / 100 / (sd ** 3)
-        skew[sd == 0] = np.nan
+            kurt_reg = (pct * dev ** 4).sum(axis=1) / 100 / (sd ** 4)
+            bc = (skew ** 2 + 1) / kurt_reg
 
+        skew[sd == 0] = np.nan
+        kurt_reg[sd == 0] = np.nan
+        bc[sd == 0] = np.nan
+
+        mask = ~has_data
         mean_s = pd.Series(mean, index=pct_df.index)
         sd_s = pd.Series(sd, index=pct_df.index)
         skew_s = pd.Series(skew, index=pct_df.index)
+        kurt_s = pd.Series(kurt_reg - 3.0, index=pct_df.index)
+        bc_s = pd.Series(bc, index=pct_df.index)
 
-        mean_s[~has_data] = np.nan
-        sd_s[~has_data] = np.nan
-        skew_s[~has_data] = np.nan
+        for s in (mean_s, sd_s, skew_s, kurt_s, bc_s):
+            s[mask] = np.nan
 
         group_means.append(mean_s)
         group_sds.append(sd_s)
         group_skews.append(skew_s)
+        group_kurts.append(kurt_s)
+        group_bcs.append(bc_s)
 
     return pd.DataFrame({
         "ordinal_mean": pd.concat(group_means, axis=1).mean(axis=1),
         "ordinal_sd": pd.concat(group_sds, axis=1).mean(axis=1),
         "ordinal_skew": pd.concat(group_skews, axis=1).mean(axis=1),
+        "ordinal_kurt": pd.concat(group_kurts, axis=1).mean(axis=1),
+        "bimodality_coef": pd.concat(group_bcs, axis=1).mean(axis=1),
     })
+
+
+# ---------------------------------------------------------------------------
+# Earth Mover's Distance
+# ---------------------------------------------------------------------------
+
+def compute_emd(pct_df_t0, pct_df_t1):
+    """
+    Compute mean Earth Mover's Distance (Wasserstein-1) per school between
+    two timepoints.
+
+    For each school present in both timepoints, and for each grade-language
+    group with complete data at both endpoints, computes the Wasserstein
+    distance between the two ordinal distributions using ordinal positions
+    [1, 2, 3, 4, 5] as the value axis and percentage vectors as weights.
+
+    EMD = 0 means the distribution is identical at both timepoints.
+    EMD = 4 is the theoretical maximum (all mass moves from position 1 to 5
+    or vice versa).
+
+    Parameters
+    ----------
+    pct_df_t0 : pandas.DataFrame
+        Percentage DataFrame (from ``compute_percentages``) for the
+        earlier timepoint. Indexed by School ID.
+    pct_df_t1 : pandas.DataFrame
+        Percentage DataFrame for the later timepoint. Indexed by School ID.
+
+    Returns
+    -------
+    pandas.Series
+        Mean EMD across available grade-language groups per school,
+        indexed by the union of both School ID sets.
+        NaN for schools missing from either timepoint or with no complete
+        group pairs.
+    """
+    w = np.array(list(ORDINAL_WEIGHTS.values()), dtype=float)  # [1,2,3,4,5]
+    common = pct_df_t0.index.intersection(pct_df_t1.index)
+
+    group_emds = []
+    for grade, lang in GRADE_LANGUAGE_GROUPS:
+        cols = _get_group_columns(grade, lang)
+
+        g0 = pct_df_t0.reindex(common)[cols]
+        g1 = pct_df_t1.reindex(common)[cols]
+
+        has_data = g0.notna().all(axis=1) & g1.notna().all(axis=1)
+        valid_idx = has_data[has_data].index
+
+        emds = pd.Series(np.nan, index=common)
+        if len(valid_idx) > 0:
+            p0 = g0.loc[valid_idx].values / 100.0
+            p1 = g1.loc[valid_idx].values / 100.0
+            emd_vals = np.array([
+                wasserstein_distance(w, w, p0[i], p1[i])
+                for i in range(len(valid_idx))
+            ])
+            emds.loc[valid_idx] = emd_vals
+
+        group_emds.append(emds)
+
+    all_idx = pct_df_t0.index.union(pct_df_t1.index)
+    return pd.concat(group_emds, axis=1).mean(axis=1).reindex(all_idx)
 
 
 # ---------------------------------------------------------------------------
@@ -391,6 +476,8 @@ def process_all_timepoints(df_all, weights=None, pca_reference=None,
         performance = {}
         ordinal_sd = {}
         ordinal_skew = {}
+        ordinal_kurt = {}
+        ordinal_bc = {}
         for key, pct in percentages.items():
             moments = compute_ordinal_moments(pct)
             invalid = ~validation[key]["valid"]
@@ -398,16 +485,20 @@ def process_all_timepoints(df_all, weights=None, pca_reference=None,
             perf = moments["ordinal_mean"]
             sd = moments["ordinal_sd"]
             skew = moments["ordinal_skew"]
-            perf[invalid] = np.nan
-            sd[invalid] = np.nan
-            skew[invalid] = np.nan
+            kurt = moments["ordinal_kurt"]
+            bc = moments["bimodality_coef"]
+            for col in (perf, sd, skew, kurt, bc):
+                col[invalid] = np.nan
 
             performance[key] = perf
             ordinal_sd[key] = sd
             ordinal_skew[key] = skew
+            ordinal_kurt[key] = kurt
+            ordinal_bc[key] = bc
 
             sy, period = key
-            print(f"{sy} {period}: mean={perf.mean():.2f}, sd={sd.mean():.2f}, skew={skew.mean():.2f}")
+            print(f"{sy} {period}: mean={perf.mean():.2f}, sd={sd.mean():.2f}, "
+                  f"skew={skew.mean():.2f}, bc={bc.mean():.3f}")
     else:
         # PCA path
         if weights is None:
@@ -440,6 +531,8 @@ def process_all_timepoints(df_all, weights=None, pca_reference=None,
     if scoring == "ordinal":
         result["ordinal_sd"] = ordinal_sd
         result["ordinal_skew"] = ordinal_skew
+        result["ordinal_kurt"] = ordinal_kurt
+        result["ordinal_bc"] = ordinal_bc
 
     return result
 
