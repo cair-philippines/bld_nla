@@ -422,7 +422,9 @@ def build_bosy_yoy(ks, df_all):
     Uses the full 7-level BoSY scale (3LD-F=1 … Grade Ready=7), which
     preserves depth-of-need information not available at EoSY.
 
-    Count stability gate: |assessed_2526 − assessed_2425| / assessed_2425 ≤ 0.25.
+    The two BoSY timepoints are independent cohorts; count fluctuation is
+    expected and is retained as informational ``count_stable`` but does not
+    gate ``valid``.
     """
     groups = get_philiri_groups(ks)
     t0 = ("2024-25", "BoSY")
@@ -452,13 +454,15 @@ def build_bosy_yoy(ks, df_all):
         & val1["valid_strict"].reindex(common, fill_value=False)
     )
 
-    # Count stability (25% threshold — both BoSY endpoints are full assessments)
+    # Cohort size change (informational — not a validity gate).
+    # The two BoSY timepoints are independent cohorts with their own enrollment
+    # characteristics, so count fluctuation does not indicate invalid data.
     cnt0 = _bosy_total_assessed(raw0, ks).reindex(common)
     cnt1 = _bosy_total_assessed(raw1, ks).reindex(common)
     count_stable = ((cnt1 - cnt0).abs() / cnt0 <= 0.25).fillna(False)
 
-    seg_valid = both_valid & count_stable
-    seg_strict = both_strict & count_stable
+    seg_valid = both_valid
+    seg_strict = both_strict
 
     m0 = _compute_moments(pct7_0.reindex(common), groups, LEVELS_7, WEIGHTS_7)
     m1 = _compute_moments(pct7_1.reindex(common), groups, LEVELS_7, WEIGHTS_7)

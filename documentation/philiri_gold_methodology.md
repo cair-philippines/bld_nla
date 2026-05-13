@@ -187,15 +187,17 @@ EoSY Assessed ≤ 1.10 × BoSY non-Grade-Ready students
 
 A school where EoSY Assessed exceeds 110% of the BoSY non-Grade-Ready count has more students re-assessed than ever took the individual BoSY test — which is inconsistent with the assessment design and likely indicates a data entry error.
 
-### 4.2 Year-over-Year Count Stability (`count_stable`)
+### 4.2 Year-over-Year Cohort Size (`count_stable`)
 
-For YoY BoSY comparisons, both timepoints are full assessments. The standard 25% threshold applies:
+The two BoSY timepoints are independent cohorts — Grade 4–6 (or 7–10) students in different school years — and will naturally carry different enrollment sizes. Count fluctuation between cohorts does not indicate an inconsistency in the data.
+
+`count_stable` is retained as an **informational column** using the 25% threshold:
 
 ```
 |BoSY_2526_assessed − BoSY_2425_assessed| / BoSY_2425_assessed ≤ 0.25
 ```
 
-Schools exceeding this threshold are excluded from the YoY BoSY file's `valid` flag.
+It does **not** gate the `valid` flag for YoY comparisons. Downstream users may use it to identify schools with unusually large cohort-size swings, but such schools are not excluded from analytical use.
 
 ### 4.3 `valid_strict` Criteria
 
