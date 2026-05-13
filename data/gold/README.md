@@ -5,8 +5,10 @@ Analytical indicators derived from silver parquets for two reading assessment in
 
 Rebuild:
 ```bash
-ds python scripts/build_gold.py
-ds python scripts/build_gold_philiri.py
+python scripts/build_silver.py --crla --philiri --rma
+python scripts/build_gold.py
+python scripts/build_gold_philiri.py
+python scripts/build_gold_rma.py
 ```
 
 Methodology references: `documentation/philiri_gold_methodology.md`

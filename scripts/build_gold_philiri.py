@@ -18,8 +18,7 @@ gold parquets (KS2 and KS3 × three file types):
         using the full 7-level BoSY scale.
 
 Usage:
-    cd /workspace/innovation-projects/project_crla
-    ds python scripts/build_gold_philiri.py [--ks2] [--ks3]
+    python scripts/build_gold_philiri.py [--ks2] [--ks3]
 
 Prerequisites:
     Run scripts/build_silver.py --philiri first.

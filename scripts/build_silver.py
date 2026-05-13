@@ -1,14 +1,13 @@
 """
-Build the silver layer for CRLA and PhilIRI.
+Build the silver layer for CRLA, PhilIRI, and RMA.
 
 Reads bronze (raw CSV exports) and writes harmonized, typed parquets
-to data/silver/crla/ and data/silver/philiri/.
+to data/silver/crla/, data/silver/philiri/, and data/silver/rma/.
 
 Usage:
-    cd /workspace/innovation-projects/project_crla
-    ds python scripts/build_silver.py [--crla] [--philiri]
+    python scripts/build_silver.py [--crla] [--philiri] [--rma]
 
-With no flags, both datasets are processed.
+With no flags, all three datasets are processed.
 """
 
 import argparse
@@ -20,6 +19,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "modules"))
 
 from preprocessing import resolve_latest_exports, load_all_assessments, write_silver_crla
 from philiri_preprocessing import resolve_philiri_files, write_silver_philiri
+from rma_preprocessing import write_silver_rma
 
 
 def build_crla_silver():
@@ -44,17 +44,28 @@ def build_philiri_silver():
     print()
 
 
+def build_rma_silver():
+    print("=" * 60)
+    print("RMA Silver")
+    print("=" * 60)
+    write_silver_rma()
+    print()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Build silver layer parquets.")
     parser.add_argument("--crla", action="store_true", help="Process CRLA only")
     parser.add_argument("--philiri", action="store_true", help="Process PhilIRI only")
+    parser.add_argument("--rma", action="store_true", help="Process RMA only")
     args = parser.parse_args()
 
-    both = not args.crla and not args.philiri
-    if args.crla or both:
+    all_datasets = not args.crla and not args.philiri and not args.rma
+    if args.crla or all_datasets:
         build_crla_silver()
-    if args.philiri or both:
+    if args.philiri or all_datasets:
         build_philiri_silver()
+    if args.rma or all_datasets:
+        build_rma_silver()
 
     print("Done.")
 

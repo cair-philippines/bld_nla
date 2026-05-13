@@ -15,11 +15,10 @@ EMD, bimodality coefficient), and writes two gold parquets:
         validity flags.
 
 Usage:
-    cd /workspace/innovation-projects/project_crla
-    ds python scripts/build_gold.py
+    python scripts/build_gold.py
 
 Prerequisites:
-    Run scripts/build_silver.py first to generate silver parquets.
+    Run scripts/build_silver.py --crla first.
 """
 
 import sys
