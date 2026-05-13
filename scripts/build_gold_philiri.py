@@ -46,7 +46,6 @@ from philiri_preprocessing import (
     _philiri_group_counts_eosy,
     compute_philiri_percentages,
     compute_philiri_percentages_7level,
-    validate_philiri,
 )
 
 GOLD_DIR = PROJECT_ROOT / "data" / "gold"
@@ -288,8 +287,15 @@ def build_timepoints(ks, df_all):
 
     for (sy, period), raw_df in sorted(df_all.items()):
         pct3 = compute_philiri_percentages(raw_df, ks, period)
-        val = validate_philiri(pct3, raw_df, ks, period)
         moments = _compute_moments(pct3, groups, LEVELS_3, WEIGHTS_3)
+
+        # groups_with_data: count of grade-language groups with all 3 levels present
+        groups_present = []
+        for grade, lang in groups:
+            cols = [f"{grade} {lang} {lv}" for lv in LEVELS_3]
+            has = pct3[cols].notna().all(axis=1) & (pct3[cols].sum(axis=1) > 0)
+            groups_present.append(has)
+        groups_with_data = pd.concat(groups_present, axis=1).sum(axis=1).astype(int)
 
         # BoSY-only depth indicators (averaged across groups)
         if period == "BoSY":
@@ -324,6 +330,7 @@ def build_timepoints(ks, df_all):
                 "ks": ks,
                 "timepoint_label": label,
                 "total_assessed": total_assessed.get(sid, np.nan),
+                "groups_with_data": int(groups_with_data.get(sid, 0)),
                 "ordinal_mean": moments["ordinal_mean"].get(sid, np.nan),
                 "ordinal_sd": moments["ordinal_sd"].get(sid, np.nan),
                 "ordinal_skew": moments["ordinal_skew"].get(sid, np.nan),
@@ -331,8 +338,6 @@ def build_timepoints(ks, df_all):
                 "bimodality_coef": moments["bimodality_coef"].get(sid, np.nan),
                 "pct_grade_ready": pct_grade_ready.get(sid, np.nan),
                 "pct_3ld": pct_3ld.get(sid, np.nan),
-                "valid": bool(val.at[sid, "valid"]) if sid in val.index else False,
-                "valid_strict": bool(val.at[sid, "valid_strict"]) if sid in val.index else False,
             }
             for col in METADATA_COLUMNS:
                 rec[col] = raw_df.at[sid, col] if col in raw_df.columns else np.nan
@@ -349,8 +354,10 @@ def build_segments(ks, df_all):
     """
     Build the school × segment gold table for within-year BoSY→EoSY segments.
 
-    Validity gate includes the EoSY plausibility check:
-        EoSY Assessed ≤ 1.10 × BoSY non-Grade-Ready students.
+    Columns
+    -------
+    School ID, ks, school_year, segment_label,
+    delta_mean, delta_sd, delta_skew, emd_mean.
     """
     groups = get_philiri_groups(ks)
     records = []
@@ -363,34 +370,14 @@ def build_segments(ks, df_all):
         raw0, raw1 = df_all[t0], df_all[t1]
         pct0 = compute_philiri_percentages(raw0, ks, "BoSY")
         pct1 = compute_philiri_percentages(raw1, ks, "EoSY")
-        val0 = validate_philiri(pct0, raw0, ks, "BoSY")
-        val1 = validate_philiri(pct1, raw1, ks, "EoSY")
-
-        both_valid = (
-            val0["valid"].reindex(pct0.index, fill_value=False)
-            & val1["valid"].reindex(pct0.index, fill_value=False)
-        )
-        both_strict = (
-            val0["valid_strict"].reindex(pct0.index, fill_value=False)
-            & val1["valid_strict"].reindex(pct0.index, fill_value=False)
-        )
-
-        # EoSY plausibility: EoSY Assessed ≤ 1.10 × BoSY non-GR
-        bosy_non_gr = _bosy_non_gr(raw0, ks).reindex(pct0.index)
-        eosy_assessed = _eosy_total_assessed(raw1, ks).reindex(pct0.index)
-        eosy_plausible = (eosy_assessed <= bosy_non_gr * 1.10).fillna(False)
-
-        seg_valid = both_valid & eosy_plausible
-        seg_strict = both_strict & eosy_plausible
 
         m0 = _compute_moments(pct0, groups, LEVELS_3, WEIGHTS_3)
         m1 = _compute_moments(pct1, groups, LEVELS_3, WEIGHTS_3)
 
-        delta_mean = (m1["ordinal_mean"] - m0["ordinal_mean"]).where(seg_valid)
-        delta_sd = (m1["ordinal_sd"] - m0["ordinal_sd"]).where(seg_valid)
-        delta_skew = (m1["ordinal_skew"] - m0["ordinal_skew"]).where(seg_valid)
-        emd = _compute_emd(pct0, pct1, groups, LEVELS_3, WEIGHTS_3)
-        emd = emd.reindex(pct0.index).where(seg_valid)
+        delta_mean = m1["ordinal_mean"] - m0["ordinal_mean"]
+        delta_sd = m1["ordinal_sd"] - m0["ordinal_sd"]
+        delta_skew = m1["ordinal_skew"] - m0["ordinal_skew"]
+        emd = _compute_emd(pct0, pct1, groups, LEVELS_3, WEIGHTS_3).reindex(pct0.index)
 
         label = f"Learning_{sy}"
         for sid in pct0.index:
@@ -403,9 +390,6 @@ def build_segments(ks, df_all):
                 "delta_sd": delta_sd.get(sid, np.nan),
                 "delta_skew": delta_skew.get(sid, np.nan),
                 "emd_mean": emd.get(sid, np.nan),
-                "valid": bool(seg_valid.get(sid, False)),
-                "valid_strict": bool(seg_strict.get(sid, False)),
-                "eosy_plausible": bool(eosy_plausible.get(sid, False)),
             })
 
     return pd.DataFrame(records)
@@ -437,41 +421,20 @@ def build_bosy_yoy(ks, df_all):
     pct7_0 = compute_philiri_percentages_7level(raw0, ks)
     pct7_1 = compute_philiri_percentages_7level(raw1, ks)
 
-    # 3-level pcts needed for validation flags
-    pct3_0 = compute_philiri_percentages(raw0, ks, "BoSY")
-    pct3_1 = compute_philiri_percentages(raw1, ks, "BoSY")
-    val0 = validate_philiri(pct3_0, raw0, ks, "BoSY")
-    val1 = validate_philiri(pct3_1, raw1, ks, "BoSY")
-
     common = pct7_0.index.intersection(pct7_1.index)
 
-    both_valid = (
-        val0["valid"].reindex(common, fill_value=False)
-        & val1["valid"].reindex(common, fill_value=False)
-    )
-    both_strict = (
-        val0["valid_strict"].reindex(common, fill_value=False)
-        & val1["valid_strict"].reindex(common, fill_value=False)
-    )
-
-    # Cohort size change (informational — not a validity gate).
-    # The two BoSY timepoints are independent cohorts with their own enrollment
-    # characteristics, so count fluctuation does not indicate invalid data.
+    # Cohort size change (informational only — independent cohorts).
     cnt0 = _bosy_total_assessed(raw0, ks).reindex(common)
     cnt1 = _bosy_total_assessed(raw1, ks).reindex(common)
     count_stable = ((cnt1 - cnt0).abs() / cnt0 <= 0.25).fillna(False)
 
-    seg_valid = both_valid
-    seg_strict = both_strict
-
     m0 = _compute_moments(pct7_0.reindex(common), groups, LEVELS_7, WEIGHTS_7)
     m1 = _compute_moments(pct7_1.reindex(common), groups, LEVELS_7, WEIGHTS_7)
 
-    delta_mean = (m1["ordinal_mean"] - m0["ordinal_mean"]).where(seg_valid)
-    delta_sd = (m1["ordinal_sd"] - m0["ordinal_sd"]).where(seg_valid)
-    delta_skew = (m1["ordinal_skew"] - m0["ordinal_skew"]).where(seg_valid)
-    emd = _compute_emd(pct7_0, pct7_1, groups, LEVELS_7, WEIGHTS_7)
-    emd = emd.reindex(common).where(seg_valid)
+    delta_mean = m1["ordinal_mean"] - m0["ordinal_mean"]
+    delta_sd = m1["ordinal_sd"] - m0["ordinal_sd"]
+    delta_skew = m1["ordinal_skew"] - m0["ordinal_skew"]
+    emd = _compute_emd(pct7_0, pct7_1, groups, LEVELS_7, WEIGHTS_7).reindex(common)
 
     # BoSY-only depth indicators (change)
     def _gr_pct(raw_df):
@@ -505,8 +468,8 @@ def build_bosy_yoy(ks, df_all):
     ld3_0 = _ld3_pct(raw0).reindex(common)
     ld3_1 = _ld3_pct(raw1).reindex(common)
 
-    delta_pct_grade_ready = (gr1 - gr0).where(seg_valid)
-    delta_pct_3ld = (ld3_1 - ld3_0).where(seg_valid)
+    delta_pct_grade_ready = gr1 - gr0
+    delta_pct_3ld = ld3_1 - ld3_0
 
     records = []
     for sid in common:
@@ -519,8 +482,6 @@ def build_bosy_yoy(ks, df_all):
             "delta_pct_grade_ready": delta_pct_grade_ready.get(sid, np.nan),
             "delta_pct_3ld": delta_pct_3ld.get(sid, np.nan),
             "emd_mean": emd.get(sid, np.nan),
-            "valid": bool(seg_valid.get(sid, False)),
-            "valid_strict": bool(seg_strict.get(sid, False)),
             "count_stable": bool(count_stable.get(sid, False)),
         })
 
@@ -566,9 +527,8 @@ def build_ks(ks):
     if not yoy_df.empty:
         yoy_out = GOLD_DIR / f"philiri_{ks}_bosy_yoy.parquet"
         yoy_df.to_parquet(yoy_out, index=False)
-        n_valid = yoy_df["valid"].sum()
         print(f"  → {yoy_out.name} ({len(yoy_df):,} rows, "
-              f"{n_valid:,} valid schools)")
+              f"{yoy_df['School ID'].nunique():,} schools)")
 
 
 def main():

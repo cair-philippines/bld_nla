@@ -33,13 +33,10 @@ sys.path.insert(0, str(PROJECT_ROOT / "modules"))
 
 from preprocessing import (
     SILVER_CRLA_DIR,
-    CANONICAL_GRADE_COLUMNS,
     GRADE_LANGUAGE_GROUPS,
     METADATA_COLUMNS,
     _get_group_columns,
-    _clean_raw_to_numeric,
     compute_percentages,
-    validate_timepoint,
     get_total_assessed,
 )
 from analysis import (
@@ -97,7 +94,7 @@ def load_silver_crla(silver_dir=None):
 # Build crla_school_timepoints
 # ---------------------------------------------------------------------------
 
-def build_timepoints(df_all, percentages, validation):
+def build_timepoints(df_all, percentages):
     """
     Build the school × timepoint gold table.
 
@@ -105,12 +102,11 @@ def build_timepoints(df_all, percentages, validation):
     -------
     School ID, school_year, period, timepoint_label,
     School Name, Region, Division, District,
-    total_assessed,
+    total_assessed, groups_with_data,
     ordinal_overall, ordinal_G1, ordinal_G2, ordinal_G3,
     pct_gl,
     ordinal_mean, ordinal_sd, ordinal_skew, ordinal_kurt, bimodality_coef,
-    ordinal_{gl_label} for each grade-language group,
-    valid, valid_strict.
+    ordinal_{gl_label} for each grade-language group.
     """
     records = []
 
@@ -122,19 +118,20 @@ def build_timepoints(df_all, percentages, validation):
 
         raw_df = df_all[tp]
         pct_df = percentages[tp]
-        val_df = validation[tp]
 
         # Ordinal moments
         moments = compute_ordinal_moments(pct_df)
 
-        # Grade-level aggregated ordinal scores
+        # Grade-level aggregated ordinal scores; track groups_with_data in same pass
         group_scores = {}
         group_gl_pcts = {}
+        groups_present = []
         for gi, (grade, lang) in enumerate(GRADE_LANGUAGE_GROUPS):
             cols = _get_group_columns(grade, lang)
             gl_label = GRADE_LANG_LABELS[gi]
             group_data = pct_df[cols]
             has_data = group_data.notna().all(axis=1)
+            groups_present.append(has_data)
 
             score = sum(
                 group_data[col] * w for col, w in zip(cols, ORDINAL_VALUES)
@@ -142,6 +139,8 @@ def build_timepoints(df_all, percentages, validation):
             score[~has_data] = np.nan
             group_scores[gl_label] = score
             group_gl_pcts[gl_label] = group_data[cols[-1]].where(has_data)
+
+        groups_with_data = pd.concat(groups_present, axis=1).sum(axis=1).astype(int)
 
         ordinal_G1 = group_scores.get("G1", pd.Series(np.nan, index=pct_df.index))
         ordinal_G2 = pd.concat(
@@ -167,6 +166,7 @@ def build_timepoints(df_all, percentages, validation):
                 "period": period,
                 "timepoint_label": label,
                 "total_assessed": total_assessed.get(sid, np.nan),
+                "groups_with_data": int(groups_with_data.get(sid, 0)),
                 "ordinal_overall": moments["ordinal_mean"].get(sid, np.nan),
                 "ordinal_G1": ordinal_G1.get(sid, np.nan),
                 "ordinal_G2": ordinal_G2.get(sid, np.nan),
@@ -177,8 +177,6 @@ def build_timepoints(df_all, percentages, validation):
                 "ordinal_skew": moments["ordinal_skew"].get(sid, np.nan),
                 "ordinal_kurt": moments["ordinal_kurt"].get(sid, np.nan),
                 "bimodality_coef": moments["bimodality_coef"].get(sid, np.nan),
-                "valid": val_df.at[sid, "valid"] if sid in val_df.index else False,
-                "valid_strict": val_df.at[sid, "valid_strict"] if sid in val_df.index else False,
             }
             # Metadata
             for col in METADATA_COLUMNS:
@@ -195,19 +193,15 @@ def build_timepoints(df_all, percentages, validation):
 # Build crla_school_segments
 # ---------------------------------------------------------------------------
 
-def build_segments(percentages, validation, df_all):
+def build_segments(percentages):
     """
     Build the school × segment gold table with delta metrics and EMD.
 
     Columns
     -------
     School ID, tp_from, tp_to, segment_label, seg_idx,
-    delta_mean, delta_sd, delta_skew,
-    emd_mean,
-    valid, valid_strict, count_stable.
+    delta_mean, delta_sd, delta_skew, emd_mean.
     """
-    from preprocessing import get_total_assessed as _get_ta
-
     segment_pairs = _build_segment_pairs()
     records = []
 
@@ -221,43 +215,19 @@ def build_segments(percentages, validation, df_all):
 
         pct0 = percentages[t0]
         pct1 = percentages[t1]
-        val0 = validation[t0]
-        val1 = validation[t1]
-
-        # Validity at both endpoints
-        both_valid = (
-            val0["valid"].reindex(pct0.index, fill_value=False) &
-            val1["valid"].reindex(pct0.index, fill_value=False)
-        )
-        both_strict = (
-            val0["valid_strict"].reindex(pct0.index, fill_value=False) &
-            val1["valid_strict"].reindex(pct0.index, fill_value=False)
-        ) if "valid_strict" in val0.columns else pd.Series(False, index=pct0.index)
-
-        # Count stability (25% threshold)
-        sy0, p0 = t0
-        sy1, p1 = t1
-        cnt0 = _get_ta(sy0, p0).reindex(pct0.index)
-        cnt1 = _get_ta(sy1, p1).reindex(pct0.index)
-        count_stable = ((cnt1 - cnt0).abs() / cnt0 <= 0.25).fillna(False)
-
-        seg_valid = both_valid & count_stable
-        seg_strict = both_strict & count_stable
 
         # Ordinal moments at both endpoints
         m0 = compute_ordinal_moments(pct0)
         m1 = compute_ordinal_moments(pct1)
 
-        delta_mean = (m1["ordinal_mean"] - m0["ordinal_mean"]).where(seg_valid)
-        delta_sd = (m1["ordinal_sd"] - m0["ordinal_sd"]).where(seg_valid)
-        delta_skew = (m1["ordinal_skew"] - m0["ordinal_skew"]).where(seg_valid)
+        delta_mean = m1["ordinal_mean"] - m0["ordinal_mean"]
+        delta_sd = m1["ordinal_sd"] - m0["ordinal_sd"]
+        delta_skew = m1["ordinal_skew"] - m0["ordinal_skew"]
 
         # EMD
-        emd = compute_emd(pct0, pct1)
-        emd = emd.reindex(pct0.index).where(seg_valid)
+        emd = compute_emd(pct0, pct1).reindex(pct0.index)
 
-        common_idx = pct0.index
-        for sid in common_idx:
+        for sid in pct0.index:
             records.append({
                 "School ID": sid,
                 "tp_from": tp_from,
@@ -268,9 +238,6 @@ def build_segments(percentages, validation, df_all):
                 "delta_sd": delta_sd.get(sid, np.nan),
                 "delta_skew": delta_skew.get(sid, np.nan),
                 "emd_mean": emd.get(sid, np.nan),
-                "valid": bool(seg_valid.get(sid, False)),
-                "valid_strict": bool(seg_strict.get(sid, False)),
-                "count_stable": bool(count_stable.get(sid, False)),
             })
 
     return pd.DataFrame(records)
@@ -287,20 +254,15 @@ def main():
         print("No silver files found. Run build_silver.py first.")
         return
 
-    print("\nComputing percentages and validation ...")
+    print("\nComputing percentages ...")
     percentages = {}
-    validation = {}
     for key, df in df_all.items():
         percentages[key] = compute_percentages(df)
-        validation[key] = validate_timepoint(
-            percentages[key],
-            raw_counts_df=_clean_raw_to_numeric(df),
-        )
 
     GOLD_DIR.mkdir(parents=True, exist_ok=True)
 
     print("\nBuilding crla_school_timepoints ...")
-    tp_df = build_timepoints(df_all, percentages, validation)
+    tp_df = build_timepoints(df_all, percentages)
     tp_out = GOLD_DIR / "crla_school_timepoints.parquet"
     tp_df.to_parquet(tp_out, index=False)
     print(f"  → {tp_out} ({len(tp_df)} rows, "
@@ -308,7 +270,7 @@ def main():
           f"{tp_df['timepoint_label'].nunique()} timepoints)")
 
     print("\nBuilding crla_school_segments ...")
-    seg_df = build_segments(percentages, validation, df_all)
+    seg_df = build_segments(percentages)
     seg_out = GOLD_DIR / "crla_school_segments.parquet"
     seg_df.to_parquet(seg_out, index=False)
     print(f"  → {seg_out} ({len(seg_df)} rows, "
