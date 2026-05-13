@@ -1,0 +1,19 @@
+# Service account keys
+keys/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Excel temp files
+~$*.xlsx
+~$*.xls
+
+# OS
+.DS_Store
+Thumbs.db

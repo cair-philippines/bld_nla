@@ -944,3 +944,252 @@ if len(available_tps) >= 2:
 
 else:
     st.info("At least two timepoints are needed to show the distribution shift.")
+
+
+# =========================================================================
+# Section F: Within-Year Distribution Overlay (per grade-language group)
+# =========================================================================
+
+st.markdown("---")
+st.subheader("Within-Year Distribution Overlay")
+st.caption(
+    "Smoothed BoSY vs EoSY distributions across reading profiles, shown "
+    "per grade and language group. Use this to see how learners redistribute "
+    "within each group across a school year."
+)
+
+_overlay_mode = st.radio(
+    "Show as",
+    ["Percentage", "Raw Count"],
+    horizontal=True,
+    label_visibility="collapsed",
+    key="overlay_display_mode",
+)
+_overlay_value_col = "percentage" if _overlay_mode == "Percentage" else "raw_count"
+
+# Grade → list of grade-language groups in canonical order
+_GRADE_TO_GROUPS = {
+    "G1": ["G1"],
+    "G2": ["G2 MT", "G2 Fil"],
+    "G3": ["G3 MT", "G3 Fil", "G3 Eng"],
+}
+
+_BOSY_COLOR = "#E07A3A"   # orange
+_EOSY_COLOR = "#4DA688"   # teal
+_FILL_ALPHA = 0.30
+
+
+def _smooth_curve(x_positions, y_values):
+    """Return an interpolated (x, y) pair with a smoothed curve.
+
+    Uses scipy's make_interp_spline when available (matches the methodology
+    notebook's skewness panel approach). Falls back to raw points if
+    interpolation is not possible (e.g., all NaN).
+    """
+    import numpy as np
+    x = np.asarray(x_positions, dtype=float)
+    y = np.asarray(y_values, dtype=float)
+    mask = ~np.isnan(y)
+    if mask.sum() < 4:
+        return x, y
+    try:
+        from scipy.interpolate import make_interp_spline
+        x_valid = x[mask]
+        y_valid = y[mask]
+        x_smooth = np.linspace(x_valid.min(), x_valid.max(), 120)
+        spline = make_interp_spline(x_valid, y_valid, k=3)
+        y_smooth = spline(x_smooth)
+        # Avoid negative dips below zero (counts/percentages can't go negative)
+        y_smooth = np.clip(y_smooth, 0, None)
+        return x_smooth, y_smooth
+    except Exception:
+        return x, y
+
+
+def _build_overlay_subplot(gl_label, bosy_data, eosy_data, value_col, display_mode):
+    """Build a single overlay subplot for one grade-language group."""
+    x_pos = list(range(1, 6))  # 1..5 matches profile_order
+
+    bosy_row = bosy_data[bosy_data["grade_lang"] == gl_label]
+    eosy_row = eosy_data[eosy_data["grade_lang"] == gl_label]
+
+    bosy_vals = [np.nan] * 5
+    eosy_vals = [np.nan] * 5
+
+    if not bosy_row.empty:
+        for _, r in bosy_row.iterrows():
+            idx = int(r["profile_order"]) - 1
+            if 0 <= idx < 5:
+                bosy_vals[idx] = r[value_col]
+    if not eosy_row.empty:
+        for _, r in eosy_row.iterrows():
+            idx = int(r["profile_order"]) - 1
+            if 0 <= idx < 5:
+                eosy_vals[idx] = r[value_col]
+
+    fig = go.Figure()
+
+    # If neither timepoint has data, render an empty frame with a note
+    if all(np.isnan(bosy_vals)) and all(np.isnan(eosy_vals)):
+        fig.add_annotation(
+            text="No data for this group",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False,
+            font=dict(size=11, color="#999999"),
+        )
+        fig.update_xaxes(visible=False)
+        fig.update_yaxes(visible=False)
+        fig.update_layout(height=220, margin=dict(l=20, r=10, t=40, b=30),
+                          title=dict(text=f"<b>{gl_label}</b>", font=dict(size=13)))
+        return fig
+
+    def _hex_to_rgba(hex_color, alpha):
+        h = hex_color.lstrip("#")
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+        return f"rgba({r},{g},{b},{alpha})"
+
+    # BoSY smoothed curve with fill
+    bx, by = _smooth_curve(x_pos, bosy_vals)
+    if not all(np.isnan(by)):
+        fig.add_trace(go.Scatter(
+            x=bx, y=by,
+            name=f"BoSY",
+            mode="lines",
+            line=dict(color=_BOSY_COLOR, width=2.5),
+            fill="tozeroy",
+            fillcolor=_hex_to_rgba(_BOSY_COLOR, _FILL_ALPHA),
+            hovertemplate="BoSY<br>%{y:.1f}<extra></extra>",
+        ))
+        # Markers at actual data points
+        fig.add_trace(go.Scatter(
+            x=x_pos, y=bosy_vals,
+            mode="markers",
+            marker=dict(color=_BOSY_COLOR, size=6),
+            showlegend=False,
+            hoverinfo="skip",
+        ))
+
+    # EoSY smoothed curve with fill
+    ex, ey = _smooth_curve(x_pos, eosy_vals)
+    if not all(np.isnan(ey)):
+        fig.add_trace(go.Scatter(
+            x=ex, y=ey,
+            name=f"EoSY",
+            mode="lines",
+            line=dict(color=_EOSY_COLOR, width=2.5),
+            fill="tozeroy",
+            fillcolor=_hex_to_rgba(_EOSY_COLOR, _FILL_ALPHA),
+            hovertemplate="EoSY<br>%{y:.1f}<extra></extra>",
+        ))
+        fig.add_trace(go.Scatter(
+            x=x_pos, y=eosy_vals,
+            mode="markers",
+            marker=dict(color=_EOSY_COLOR, size=6),
+            showlegend=False,
+            hoverinfo="skip",
+        ))
+
+    # Y-axis: counts start at 0 with auto max; percentages cap at 100
+    if display_mode == "Percentage":
+        y_range = [0, 100]
+    else:
+        combined = [v for v in (bosy_vals + eosy_vals) if not np.isnan(v)]
+        y_max = max(combined) * 1.15 if combined else 10
+        y_range = [0, y_max]
+
+    fig.update_layout(
+        height=220,
+        margin=dict(l=40, r=10, t=40, b=35),
+        title=dict(text=f"<b>{gl_label}</b>", font=dict(size=13), x=0.02),
+        showlegend=False,
+        xaxis=dict(
+            tickmode="array",
+            tickvals=x_pos,
+            ticktext=["LE", "HE", "Dev", "Trans", "GL"],
+            tickfont=dict(size=10),
+            range=[0.8, 5.2],
+        ),
+        yaxis=dict(
+            title=dict(text=display_mode, font=dict(size=9)),
+            tickfont=dict(size=9),
+            range=y_range,
+        ),
+        hovermode="x unified",
+    )
+
+    return fig
+
+
+# Render: one block per school year that has both BoSY and EoSY
+_within_year_pairs = []
+for _sy, _tp_list in sy_groups.items():
+    _periods = {p: tp for tp, p in _tp_list}
+    if "BoSY" in _periods and "EoSY" in _periods:
+        _within_year_pairs.append((_sy, _periods["BoSY"], _periods["EoSY"]))
+
+if not _within_year_pairs:
+    st.info("At least one school year with both BoSY and EoSY data is needed for the overlay view.")
+else:
+    # Legend for this section (orange = BoSY, teal = EoSY)
+    _legend_html = (
+        f'<span style="display:inline-block; width:14px; height:14px; '
+        f'background-color:{_BOSY_COLOR}; margin-right:4px; '
+        f'vertical-align:middle; border-radius:2px; opacity:0.7;"></span>'
+        f'<span style="margin-right:16px; vertical-align:middle;">BoSY</span>'
+        f'<span style="display:inline-block; width:14px; height:14px; '
+        f'background-color:{_EOSY_COLOR}; margin-right:4px; '
+        f'vertical-align:middle; border-radius:2px; opacity:0.7;"></span>'
+        f'<span style="vertical-align:middle;">EoSY</span>'
+    )
+    st.markdown(_legend_html, unsafe_allow_html=True)
+    st.markdown("")
+
+    for _sy, _tp_bosy, _tp_eosy in _within_year_pairs:
+        st.markdown(f"**SY {_sy}**")
+
+        _bosy_df = school_profiles[school_profiles["timepoint_label"] == _tp_bosy]
+        _eosy_df = school_profiles[school_profiles["timepoint_label"] == _tp_eosy]
+
+        # Row 1: G1 (full width)
+        _fig = _build_overlay_subplot("G1", _bosy_df, _eosy_df, _overlay_value_col, _overlay_mode)
+        st.plotly_chart(_fig, use_container_width=True, key=f"overlay_{_sy}_G1")
+
+        # Row 2: G2 MT + G2 Fil (half widths)
+        _c2a, _c2b = st.columns(2)
+        with _c2a:
+            _fig = _build_overlay_subplot("G2 MT", _bosy_df, _eosy_df, _overlay_value_col, _overlay_mode)
+            st.plotly_chart(_fig, use_container_width=True, key=f"overlay_{_sy}_G2MT")
+        with _c2b:
+            _fig = _build_overlay_subplot("G2 Fil", _bosy_df, _eosy_df, _overlay_value_col, _overlay_mode)
+            st.plotly_chart(_fig, use_container_width=True, key=f"overlay_{_sy}_G2Fil")
+
+        # Row 3: G3 MT + G3 Fil + G3 Eng (third widths)
+        _c3a, _c3b, _c3c = st.columns(3)
+        with _c3a:
+            _fig = _build_overlay_subplot("G3 MT", _bosy_df, _eosy_df, _overlay_value_col, _overlay_mode)
+            st.plotly_chart(_fig, use_container_width=True, key=f"overlay_{_sy}_G3MT")
+        with _c3b:
+            _fig = _build_overlay_subplot("G3 Fil", _bosy_df, _eosy_df, _overlay_value_col, _overlay_mode)
+            st.plotly_chart(_fig, use_container_width=True, key=f"overlay_{_sy}_G3Fil")
+        with _c3c:
+            _fig = _build_overlay_subplot("G3 Eng", _bosy_df, _eosy_df, _overlay_value_col, _overlay_mode)
+            st.plotly_chart(_fig, use_container_width=True, key=f"overlay_{_sy}_G3Eng")
+
+        st.markdown("")
+
+    with st.expander("How to read these overlays"):
+        st.markdown(
+            """
+            Each subplot shows a smoothed distribution of learners across the five reading profiles
+            (Lower Emergent → Grade Level) for a single grade-language group.
+            - **Orange curve** = BoSY (start of year)
+            - **Teal curve** = EoSY (end of year)
+            - If the teal curve is **shifted right** relative to the orange curve, learners moved
+              toward higher proficiency over the school year.
+            - If the **peak** of each curve moves rightward, the modal learner is improving.
+            - Overlapping regions show where the distributions agree; non-overlapping regions
+              show where the school saw net movement.
+
+            Curves are smoothed splines fit to the 5 discrete data points; dots mark the actual values.
+            """
+        )
