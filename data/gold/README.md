@@ -1,7 +1,8 @@
 # Gold Layer — School-Level Analytical Indicators
 
-Analytical indicators derived from silver parquets for two reading assessment instruments:
-**CRLA** (Grades 1–3) and **PhilIRI** (Grades 4–10, split into KS2 and KS3).
+Analytical indicators derived from silver parquets for three assessment instruments:
+**CRLA** (Grades 1–3), **PhilIRI** (Grades 4–10, split into KS2 and KS3),
+and **RMA** (Grades 1–10, split into KS1, KS2, and KS3).
 
 Rebuild:
 ```bash
@@ -27,6 +28,12 @@ Methodology references: `documentation/philiri_gold_methodology.md`
 | `philiri_ks3_school_timepoints.parquet` | 41,446 | 11,004 | KS3 one row per school × timepoint (4 timepoints) |
 | `philiri_ks3_school_segments.parquet` | 20,496 | 10,923 | KS3 one row per school × within-year segment (2 segments) |
 | `philiri_ks3_bosy_yoy.parquet` | 9,573 | 9,573 | KS3 year-over-year BoSY comparison, one row per school |
+| `rma_ks1_school_timepoints.parquet` | 114,925 | 39,303 | KS1 one row per school × timepoint (3 timepoints) |
+| `rma_ks1_school_segments.parquet` | 38,912 | 38,912 | KS1 one row per school × segment (1 segment) |
+| `rma_ks2_school_timepoints.parquet` | 76,619 | 38,567 | KS2 one row per school × timepoint (2 timepoints) |
+| `rma_ks2_school_segments.parquet` | 38,332 | 38,332 | KS2 one row per school × segment (1 segment) |
+| `rma_ks3_school_timepoints.parquet` | 21,734 | 10,972 | KS3 one row per school × timepoint (2 timepoints) |
+| `rma_ks3_school_segments.parquet` | 10,882 | 10,882 | KS3 one row per school × segment (1 segment) |
 
 ---
 
@@ -42,17 +49,21 @@ denominator for that school at that timepoint. NaN propagates honestly — no ro
 excluded; every school in the silver layer has a row in the gold layer.
 
 ### `groups_with_data`
-Integer count of grade-language groups that had complete data (all level columns
+Integer count of grade(-language) groups that had complete data (all level columns
 non-null, non-zero denominator) at a given timepoint. Maximum values:
 
-| File | Max groups |
-|---|---|
-| CRLA | 6 (G1, G2 MT, G2 Fil, G3 MT, G3 Fil, G3 Eng) |
-| PhilIRI KS2 | 6 (G4–G6 × Fil/Eng) |
-| PhilIRI KS3 | 8 (G7–G10 × Fil/Eng) |
+| File | Max groups | Groups |
+|---|---|---|
+| CRLA | 6 | G1, G2 MT, G2 Fil, G3 MT, G3 Fil, G3 Eng |
+| PhilIRI KS2 | 6 | G4–G6 × Fil/Eng |
+| PhilIRI KS3 | 8 | G7–G10 × Fil/Eng |
+| RMA KS1 | 3 | G1, G2, G3 |
+| RMA KS2 | 3 | G4, G5, G6 |
+| RMA KS3 | 4 | G7, G8, G9, G10 |
 
-~97–98% of schools reach the maximum. Schools below the maximum typically have a
-full language missing across all grades (appearing at even values: 2, 4, 6).
+~97–98% of schools reach the maximum. For CRLA and PhilIRI, schools below the maximum
+typically have a full language missing (appearing at even values: 2, 4, 6). For RMA
+there is no language split, so any value from 0 to the maximum is possible.
 `groups_with_data` is present only in timepoint files; use it as a filter or
 display annotation — it does not gate any computed metric.
 
@@ -88,8 +99,24 @@ display annotation — it does not gate any computed metric.
 | 6 | 2LD Independent |
 | 7 | Grade Ready |
 
+**RMA** — 5-level scale used at all timepoints and segments:
+
+| Ordinal | Level |
+|---|---|
+| 1 | Emerging Not Proficient |
+| 2 | Emerging - Low Proficient |
+| 3 | Developing - Nearly Proficient |
+| 4 | Transitioning - Proficient |
+| 5 | At Grade Level - Highly Proficient |
+
 **Scales are not comparable across instruments.** CRLA `ordinal_mean` (1–5) and
-PhilIRI `ordinal_mean` (1–3) measure different things on different scales.
+RMA `ordinal_mean` (1–5) share the same numeric range but measure different constructs
+(reading vs. mathematics). PhilIRI `ordinal_mean` (1–3) is on a different scale entirely.
+
+### RMA data availability notes
+- KS1 2024-25 BoSY excluded: School IDs not populated in the archive export.
+- KS1 2023-24 excluded: incompatible 3-level school-total-only schema (no per-grade breakdown).
+- KS2 and KS3: 2025-26 only; no YoY comparison is possible for any KS.
 
 ---
 
@@ -190,3 +217,42 @@ One row per school appearing in both BoSY datasets.
 | `delta_pct_3ld` | Change in deep-need (3LD) fraction (percentage points) |
 | `emd_mean` | Mean Earth Mover's Distance between the two BoSY distributions |
 | `count_stable` | `True` if \|assessed_2526 − assessed_2425\| / assessed_2425 ≤ 0.25 — informational; does not gate any metric |
+
+### `rma_{ks}_school_timepoints.parquet`
+
+| Column | Description |
+|---|---|
+| `School ID` | School identifier |
+| `ks` | `ks1`, `ks2`, or `ks3` |
+| `school_year` | `2024-25` or `2025-26` |
+| `period` | `BoSY` or `EoSY` |
+| `timepoint_label` | e.g. `BoSY 2025-26` |
+| `total_assessed` | Total students assessed at this timepoint |
+| `groups_with_data` | Count of grades with complete data (max 3 for KS1/KS2, 4 for KS3) |
+| `pct_aglhp` | Mean % at At Grade Level - Highly Proficient across grades |
+| `ordinal_mean` | Mean ordinal across grades (5-level scale, 1–5) |
+| `ordinal_sd` | SD of ordinal distribution across grades |
+| `ordinal_skew` | Skewness |
+| `ordinal_kurt` | Excess kurtosis |
+| `bimodality_coef` | BC = (skew² + 1) / regular kurtosis |
+| `School Name`, `Region`, `Division`, `District` | Metadata |
+
+### `rma_{ks}_school_segments.parquet`
+
+One segment per school year (BoSY → EoSY). KS1 has `Learning_2025-26` only
+(2024-25 BoSY excluded due to missing School IDs in the source export).
+KS2 and KS3 have `Learning_2025-26` only (single year of data).
+
+| Column | Description |
+|---|---|
+| `School ID` | School identifier |
+| `ks` | `ks1`, `ks2`, or `ks3` |
+| `school_year` | School year of the segment |
+| `segment_label` | `Learning_2025-26` |
+| `seg_idx` | Chronological index (0 for all current segments) |
+| `tp_from` | `BoSY {sy}` |
+| `tp_to` | `EoSY {sy}` |
+| `delta_mean` | `ordinal_mean(EoSY) − ordinal_mean(BoSY)` on 5-level scale |
+| `delta_sd` | Change in SD |
+| `delta_skew` | Change in skewness |
+| `emd_mean` | Mean Earth Mover's Distance (Wasserstein-1) across grades |
