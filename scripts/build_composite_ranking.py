@@ -375,7 +375,7 @@ def main():
         notes = [
             ("Field", "Value"),
             ("Generated", pd.Timestamp.now().strftime("%Y-%m-%d")),
-            ("Data Source", "CRLA dashboard exports (data/raw/dashboard_export/)"),
+            ("Data Source", "CRLA dashboard exports (data/bronze/crla/)"),
             ("School Years", "SY 2024-25 and SY 2025-26 (within-school-year evaluation only)"),
             ("Total Schools in Dataset", f"{len(ref):,}"),
             ("Valid for Composite (both SYs)", f"{n_valid_composite:,}"),

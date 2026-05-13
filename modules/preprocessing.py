@@ -54,9 +54,9 @@ CRLA_RAW_FILES = {
     ),
 }
 
-# Dashboard export directory (automated Looker Studio scraper output).
+# Bronze layer — CRLA raw exports (automated Looker Studio scraper output).
 # Files follow the naming convention: CRLA_{period}_{school_year}_{timestamp}.csv
-DASHBOARD_EXPORT_DIR = "data/raw/dashboard_export"
+DASHBOARD_EXPORT_DIR = "data/bronze/crla"
 
 
 def resolve_latest_exports(export_dir=None):

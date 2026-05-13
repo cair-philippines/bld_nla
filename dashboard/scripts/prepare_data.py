@@ -54,23 +54,9 @@ from priority_ranking import compute_priority_ranking
 # Config
 # ---------------------------------------------------------------------------
 
-# Use dashboard exports as canonical source (resolve_latest_exports finds
-# the most recent file per timepoint from data/raw/dashboard_export/).
-# Falls back to hardcoded paths if no exports are found.
-LOCAL_FILES = resolve_latest_exports() or {
-    ("2024-25", "BoSY"): (
-        "data/raw/CRLA Results Archive_SY 2024-25 "
-        "Assessment Results_Table_BoSY.csv"
-    ),
-    ("2024-25", "EoSY"): (
-        "data/raw/CRLA Results Archive_SY 2024-25 "
-        "Assessment Results_Table_EoSY.csv"
-    ),
-    ("2025-26", "BoSY"): (
-        "data/raw/CRLA National Dashboard_BoSY 2025-26 "
-        "Assessment Results_Table.csv"
-    ),
-}
+# Bronze layer is the canonical source (data/bronze/crla/).
+# resolve_latest_exports() scans for the most recent file per timepoint.
+LOCAL_FILES = resolve_latest_exports()
 
 TIMEPOINT_ORDER = ALL_TIMEPOINTS
 
