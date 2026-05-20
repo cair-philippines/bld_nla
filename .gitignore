@@ -20,3 +20,7 @@ Thumbs.db
 
 # Derived data artifacts (regenerate via build_silver.py / build_gold.py)
 *.parquet
+
+# Noise directories — not part of the data platform
+archive/
+dashboard/
